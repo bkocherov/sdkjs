@@ -426,7 +426,7 @@ function CFontFileLoader(id)
         //var _name = this.Id;
         var _name = g_fontNamesEncoder.Encode(this.Id) + ".js";
 
-        xhr.open('GET', basePath + "odttf/" + _name, true); // TODO:
+        xhr.open('GET', basePath + "/" + _name, true); // TODO:
 
         if (typeof ArrayBuffer !== 'undefined' && !window.opera)
             xhr.responseType = 'arraybuffer';
