@@ -2263,6 +2263,7 @@ background-repeat: no-repeat;\
 				// Обновляем состояние возможности сохранения документа
 				t._onUpdateDocumentCanSave();
 
+				t.jio_save();
 				if (undefined !== window["AscDesktopEditor"])
 				{
 					window["AscDesktopEditor"]["OnSave"]();
