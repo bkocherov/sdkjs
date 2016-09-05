@@ -19,8 +19,11 @@
 		"../common/apiBase.js",
 		"../common/Private/license.js",
 		"../word/apiCommon.js",
-        "../slide/api.js"
-	  ],
+        "../slide/api.js",
+        "../common/Local/license.js",
+        "../common/Local/empty_slide.js",
+        "../common/Local/jio.js"
+      ],
 	  "common": [
         "../common/downloaderfiles.js",
         "../common/NumFormat.js",
@@ -193,7 +196,9 @@
 		"../common/text_input.js",
 		"../common/Drawings/Format/OleObject.js",
 		"../common/Drawings/Format/DrawingContent.js",
-		"../common/plugins.js"
+		"../common/plugins.js",
+        "../common/Local/common_jio.js",
+        "../slide/Local/api_jio.js"
       ],
       "private": [
         "../slide/Private/comments.js",

@@ -1524,6 +1524,7 @@ var editor;
         // Обновляем состояние возможности сохранения документа
         t.onUpdateDocumentModified(History.Have_Changes());
 
+        t.jio_save();
         if (undefined !== window["AscDesktopEditor"]) {
           window["AscDesktopEditor"]["OnSave"]();
         }
