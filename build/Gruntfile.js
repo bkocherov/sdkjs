@@ -175,7 +175,7 @@ module.exports = function(grunt) {
 		} else {
 			splitLine = ('PRETTY_PRINT' === formatting) ? 'window["split"] = "split";' : 'window["split"]="split";';
 		}
-		
+		splitLine = 'window["split"]="split";';
 		grunt.initConfig({
 			'closure-compiler': {
 				sdk: {
@@ -191,7 +191,7 @@ module.exports = function(grunt) {
 					  prefix: [ "sdk-all-min", "sdk-all" ]
 					},
 					dest: sdkDstFolder,
-					src: tmp_sdk_path
+					src: sdkTmp
 				}
 			},
 			concat: {
@@ -237,6 +237,6 @@ module.exports = function(grunt) {
 	});
 	
 	grunt.registerTask('concat_sdk', ['concat_sdk_init', 'concat', 'clean']);
-	grunt.registerTask('build_sdk', ['concat_sdk', 'compile_sdk_init', 'closure-compiler', 'splitfile', 'concat', 'replace', 'clean']);
+	grunt.registerTask('build_sdk', ['compile_sdk_init', 'splitfile', 'concat', 'replace', 'clean']);
 	grunt.registerTask('default', ['build_all']);
 };
