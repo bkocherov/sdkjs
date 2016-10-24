@@ -1119,13 +1119,16 @@
 	    this.isSendStandartTextures = true;
 
 		var _count = AscCommon.g_oUserTexturePresets.length;
-		var arr    = new Array(_count);
+		var arr    = new Array(_count),
+			b_LoadImage = this._editorNameById() === 'cell';
 		for (var i = 0; i < _count; ++i)
 		{
 			arr[i]       = new AscCommon.asc_CTexture();
 			arr[i].Id    = i;
 			arr[i].Image = AscCommon.g_oUserTexturePresets[i];
-			this.ImageLoader.LoadImage(AscCommon.g_oUserTexturePresets[i], 1);
+			if (b_LoadImage) {
+				this.ImageLoader.LoadImage(AscCommon.g_oUserTexturePresets[i], 1);
+			}
 		}
 
 		this.sendEvent('asc_onInitStandartTextures', arr);
