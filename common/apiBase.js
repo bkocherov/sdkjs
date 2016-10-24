@@ -899,7 +899,6 @@
 		}
 		else
 		{
-			this.sync_StartAction(c_oAscAsyncActionType.BlockInteraction, c_oAscAsyncAction.UploadImage);
 			AscCommon.UploadImageFiles(files, this.documentId, this.documentUserId, this.CoAuthoringApi.get_jwt(), function(error, url)
 			{
 				if (c_oAscError.ID.No !== error)
@@ -910,7 +909,6 @@
 				{
 					t._addImageUrl(url);
 				}
-				t.sync_EndAction(c_oAscAsyncActionType.BlockInteraction, c_oAscAsyncAction.UploadImage);
 			});
 		}
 	};
