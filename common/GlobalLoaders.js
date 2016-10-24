@@ -77,7 +77,7 @@
         {
             this.Api = _api;
         };
-                
+
         this.LoadEmbeddedFonts = function(url, _fonts)
         {
             this.embeddedFilesPath = url;
@@ -346,7 +346,7 @@
                     oThis.Api.OpenDocumentProgress.CurrentFont++;
                     oThis.Api.SendOpenProgress();
                 }
-                
+
                 oThis.fonts_loading_after_style[oThis.fonts_loading_after_style.length] = oThis.fonts_loading[0];
                 oThis.fonts_loading.shift();
                 oThis._LoadFonts();
@@ -438,11 +438,6 @@
         this.bIsLoadDocumentImagesNoByOrder = true;
         this.nNoByOrderCounter = 0;
 
-        this.loadImageCallBackCounter = 0;
-        this.loadImageCallBackCounterMax = 0;
-        this.loadImageCallBack = null;
-        this.loadImageCallBackArgs = null;
-
 		var oThis = this;
 
         this.put_Api = function(_api)
@@ -462,224 +457,130 @@
         
         this.LoadDocumentImages = function(_images, isUrl)
         {
-            // сначала заполним массив
-            if (this.ThemeLoader == null)
+            var oThis = this,
+              images = [];
+            if (this.ThemeLoader === null)
                 this.Api.asyncImagesDocumentStartLoaded();
             else
                 this.ThemeLoader.asyncImagesStartLoaded();
+            if (!this.bIsAsyncLoadDocumentImages) {
+                this.nNoByOrderCounter = 0;
+                for (var id in _images) {
+                    images.push(AscCommon.getFullImageSrc2(_images[id]));
+                }
+                return RSVP.all(images.map(function (image_id) {
+                      return oThis._LoadImage(image_id)
+                        .push(function () {
+                            if (oThis.bIsLoadDocumentFirst === true) {
+                                oThis.Api.OpenDocumentProgress.CurrentImage++;
+                                oThis.Api.SendOpenProgress();
+                            }
 
-            this.images_loading = [];
-
-            for (var id in _images)
-            {
-                this.images_loading[this.images_loading.length] = AscCommon.getFullImageSrc2(_images[id]);
-            }
-
-            if (!this.bIsAsyncLoadDocumentImages)
-            {
-				this.nNoByOrderCounter = 0;
-                this._LoadImages();
-            }
-            else
-            {
-                var _len = this.images_loading.length;
-                for (var i = 0; i < _len; i++)
-                {
-                    this.LoadImageAsync(i);
+                        });
+                  }))
+                  .then(function () {
+                      if (oThis.ThemeLoader === null)
+                          oThis.Api.asyncImagesDocumentEndLoaded();
+                      else
+                          oThis.ThemeLoader.asyncImagesEndLoaded();
+                  });
+            } else {
+                for (var id in _images) {
+                    this._LoadImage(AscCommon.getFullImageSrc2(_images[id]))
+                      .push(function (oImage) {
+                          oThis.Api.asyncImageEndLoadedBackground(oImage);
+                      });
                 }
 
-                this.images_loading.splice(0, _len);
-
-                if (this.ThemeLoader == null)
+                if (this.ThemeLoader === null)
                     this.Api.asyncImagesDocumentEndLoaded();
                 else
                     this.ThemeLoader.asyncImagesEndLoaded();
             }
         };
 
-        this._LoadImages = function()
+        this._LoadImage = function (image_id, Type)
         {
-			var _count_images = this.images_loading.length;
-
-            if (0 == _count_images)
-            {
-				this.nNoByOrderCounter = 0;
-
-                if (this.ThemeLoader == null)
-                    this.Api.asyncImagesDocumentEndLoaded();
-                else
-                    this.ThemeLoader.asyncImagesEndLoaded();
-
-                return;
+            var start = image_id.slice(0, 4),
+              queue,
+              oThis = this;
+            if (0 === start.indexOf('jio:')) {
+                queue = Common.Gateway.jio_getAttachment(this.Api.documentId, image_id.slice(4), 'asBlobURL')
+                  .push(undefined, function (error) {
+                      console.log(error);
+                      return "";
+                  });
+            } else {
+                queue = new RSVP.Queue().push(function () {
+                    return image_id;
+                });
             }
-
-            for (var i = 0; i < _count_images; i++)
-			{
-				var _id = this.images_loading[i];
-				var oImage = new CImage(_id);
-				oImage.Status = ImageLoadStatus.Loading;
-				oImage.Image = new Image();
-				oThis.map_image_index[oImage.src] = oImage;
-				oImage.Image.parentImage = oImage;
-				oImage.Image.onload = function ()
-				{
-					this.parentImage.Status = ImageLoadStatus.Complete;
-					oThis.nNoByOrderCounter++;
-
-					if (oThis.bIsLoadDocumentFirst === true)
-					{
-						oThis.Api.OpenDocumentProgress.CurrentImage++;
-						oThis.Api.SendOpenProgress();
-					}
-
-					if (!oThis.bIsLoadDocumentImagesNoByOrder)
-					{
-						oThis.images_loading.shift();
-						oThis._LoadImages();
-					}
-					else if (oThis.nNoByOrderCounter == oThis.images_loading.length)
-                    {
-						oThis.images_loading = [];
-						oThis._LoadImages();
-                    }
-				};
-				oImage.Image.onerror = function ()
-				{
-					this.parentImage.Status = ImageLoadStatus.Complete;
-					this.parentImage.Image = null;
-					oThis.nNoByOrderCounter++;
-
-					if (oThis.bIsLoadDocumentFirst === true)
-					{
-						oThis.Api.OpenDocumentProgress.CurrentImage++;
-						oThis.Api.SendOpenProgress();
-					}
-
-					if (!oThis.bIsLoadDocumentImagesNoByOrder)
-					{
-						oThis.images_loading.shift();
-						oThis._LoadImages();
-					}
-					else if (oThis.nNoByOrderCounter == oThis.images_loading.length)
-					{
-						oThis.images_loading = [];
-						oThis._LoadImages();
-					}
-				};
-				//oImage.Image.crossOrigin = 'anonymous';
-				oImage.Image.src = oImage.src;
-
-				if (!oThis.bIsLoadDocumentImagesNoByOrder)
-                    return;
-			}
+            queue.push(function (url) {
+                if (url === "") {
+                    url = image_id;
+                }
+                return new RSVP.Promise(function (resolve, reject) {
+                    var oImage = new CImage(image_id);
+                    oImage.Type = Type;
+                    oImage.Status = ImageLoadStatus.Loading;
+                    oImage.Image = new Image();
+                    oThis.map_image_index[image_id] = oImage;
+                    oImage.Image.onload = function () {
+                        oImage.Status = ImageLoadStatus.Complete;
+                        oThis.nNoByOrderCounter++;
+                        resolve(oImage);
+                    };
+                    oImage.Image.onerror = function () {
+                        oImage.Status = ImageLoadStatus.Complete;
+                        oImage.Image = null;
+                        oThis.nNoByOrderCounter++;
+                        resolve(oImage);
+                    };
+                    //oImage.Image.crossOrigin = 'anonymous';
+                    oImage.Image.src = url;
+                });
+            });
+            return queue;
         };
 
         this.LoadImage = function(src, Type)
         {
-            var _image = this.map_image_index[src];
-            if (undefined != _image)
+            var _image = this.map_image_index[src],
+              oThis = this;
+            if (undefined !== _image)
                 return _image;
 
             this.Api.asyncImageStartLoaded();
+            this._LoadImage(src, Type)
+              .push(function (oImage) {
+                  oThis.Api.asyncImageEndLoaded(oImage);
+              });
 
-            var oImage = new CImage(src);
-            oImage.Type = Type;
-            oImage.Image = new Image();
-            oImage.Status = ImageLoadStatus.Loading;
-            oThis.map_image_index[oImage.src] = oImage;
-
-            oImage.Image.onload = function(){
-                oImage.Status = ImageLoadStatus.Complete;
-                oThis.Api.asyncImageEndLoaded(oImage);
-            };
-            oImage.Image.onerror = function(){
-                oImage.Image = null;
-                oImage.Status = ImageLoadStatus.Complete;
-                oThis.Api.asyncImageEndLoaded(oImage);
-            };
-            //oImage.Image.crossOrigin = 'anonymous';
-            oImage.Image.src = oImage.src;
             return null;
-        };
-
-        this.LoadImageAsync = function(i)
-        {
-            var _id = oThis.images_loading[i];
-            var oImage = new CImage(_id);
-            oImage.Status = ImageLoadStatus.Loading;
-            oImage.Image = new Image();
-            oThis.map_image_index[oImage.src] = oImage;
-            oImage.Image.onload = function(){
-                oImage.Status = ImageLoadStatus.Complete;
-                oThis.Api.asyncImageEndLoadedBackground(oImage);
-            };
-            oImage.Image.onerror = function(){
-                oImage.Status = ImageLoadStatus.Complete;
-                oImage.Image = null;
-                oThis.Api.asyncImageEndLoadedBackground(oImage);
-            };
-            //oImage.Image.crossOrigin = 'anonymous';
-            oImage.Image.src = oImage.src;
         };
 
         this.LoadImagesWithCallback = function(arr, loadImageCallBack, loadImageCallBackArgs)
         {
             var arrAsync = [];
-            var i = 0;
+            var i;
             for (i = 0; i < arr.length; i++)
             {
                 if (this.map_image_index[arr[i]] === undefined)
                     arrAsync.push(arr[i]);
             }
 
-            if (arrAsync.length == 0)
+            if (arrAsync.length === 0)
             {
 				loadImageCallBack.call(this.Api, loadImageCallBackArgs);
-                return;
-            }
-
-			this.loadImageCallBackCounter = 0;
-            this.loadImageCallBackCounterMax = arrAsync.length;
-			this.loadImageCallBack = loadImageCallBack;
-			this.loadImageCallBackArgs = loadImageCallBackArgs;
-
-			for (i = 0; i < arrAsync.length; i++)
-			{
-				var oImage = new CImage(arrAsync[i]);
-				oImage.Image = new Image();
-				oImage.Image.parentImage = oImage;
-				oImage.Status = ImageLoadStatus.Loading;
-				this.map_image_index[oImage.src] = oImage;
-
-				oImage.Image.onload = function ()
-				{
-					this.parentImage.Status = ImageLoadStatus.Complete;
-					oThis.loadImageCallBackCounter++;
-
-					if (oThis.loadImageCallBackCounter == oThis.loadImageCallBackCounterMax)
-					    oThis.LoadImagesWithCallbackEnd();
-				};
-				oImage.Image.onerror = function ()
-				{
-					this.parentImage.Image = null;
-					this.parentImage.Status = ImageLoadStatus.Complete;
-
-					if (oThis.loadImageCallBackCounter == oThis.loadImageCallBackCounterMax)
-						oThis.LoadImagesWithCallbackEnd();
-				};
-				//oImage.Image.crossOrigin = 'anonymous';
-				oImage.Image.src = oImage.src;
+				return;
 			}
-        };
 
-        this.LoadImagesWithCallbackEnd = function()
-        {
-			this.loadImageCallBack.call(this.Api, this.loadImageCallBackArgs);
-			this.loadImageCallBack = null;
-			this.loadImageCallBackArgs = null;
-			this.loadImageCallBackCounterMax = 0;
-			this.loadImageCallBackCounter = 0;
-        };
+			return RSVP.all(arrAsync.map(this._LoadImage))
+				.then(function ()
+				{
+					loadImageCallBack.call(oThis.Api, loadImageCallBackArgs);
+				});
+		};
     }
 
     var g_flow_anchor = new Image();

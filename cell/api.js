@@ -2356,49 +2356,32 @@ var editor;
     return ret;
   };
 
-  spreadsheet_api.prototype.asc_addImageDrawingObject = function (imageUrl) {
-    var rData = {
-      "id": this.documentId,
-      "userid": this.documentUserId,
-      "c": "imgurl",
-      "saveindex": g_oDocumentUrls.getMaxIndex(),
-      "data": imageUrl
-    };
-
+  spreadsheet_api.prototype.asc_addImageDrawingObject = function(imageUrl, callback) {
     var t = this;
-    this.sync_StartAction(c_oAscAsyncActionType.BlockInteraction, c_oAscAsyncAction.UploadImage);
-    this.fCurCallback = function (input) {
-      if (null != input && "imgurl" == input["type"]) {
-        if ("ok" == input["status"]) {
-          var data = input["data"];
-          var urls = {};
-          var firstUrl;
-          for (var i = 0; i < data.length; ++i) {
-            var elem = data[i];
-            if (elem.url) {
-              if (!firstUrl) {
-                firstUrl = elem.url;
-              }
-              urls[elem.path] = elem.url;
-            }
-          }
-          g_oDocumentUrls.addUrls(urls);
-          if (firstUrl) {
-            var ws = t.wb.getWorksheet();
-            ws.objectRender.addImageDrawingObject(firstUrl, null);
-          } else {
-            t.handlers.trigger("asc_onError", c_oAscError.ID.Unknown, c_oAscError.Level.NoCritical);
-          }
-        } else {
-          t.handlers.trigger("asc_onError", mapAscServerErrorToAscError(parseInt(input["data"])),
-              c_oAscError.Level.NoCritical);
-        }
-      } else {
+    if (!callback) {
+      callback = function (url) {
+        //g_oDocumentUrls.addUrls(urls);
+        var ws = t.wb.getWorksheet();
+        ws.objectRender.addImageDrawingObject('jio:' + url, null);
+      };
+    }
+    //this.sync_StartAction(c_oAscAsyncActionType.BlockInteraction, c_oAscAsyncAction.UploadImage);
+    return new RSVP.Queue()
+      .push(function () {
+        return  imageUrl;
+      })
+      .push(AscCommon.downloadUrlAsBlob)
+      .push(AscCommon.readBlobAsDataURL)
+      .push(function (dataUrl) {
+        return Common.Gateway.jio_putAttachment(t.documentId, undefined, dataUrl);
+      })
+      .push(callback)
+      //.push(function () {t.sync_EndAction(c_oAscAsyncActionType.BlockInteraction, c_oAscAsyncAction.UploadImage);})
+      .push(undefined, function (error) {
+        console.log(error);
         t.handlers.trigger("asc_onError", c_oAscError.ID.Unknown, c_oAscError.Level.NoCritical);
-      }
-      t.sync_EndAction(c_oAscAsyncActionType.BlockInteraction, c_oAscAsyncAction.UploadImage);
-    };
-    sendCommand(this, null, rData);
+        //t.sync_EndAction(c_oAscAsyncActionType.BlockInteraction, c_oAscAsyncAction.UploadImage);
+      });
   };
 
 
@@ -2662,46 +2645,10 @@ var editor;
         return;
       }
 
-      var rData = {
-        "id": this.documentId,
-        "userid": this.documentUserId,
-        "c": "imgurl",
-        "saveindex": g_oDocumentUrls.getMaxIndex(),
-        "data": sImageUrl};
-
-      var t = this;
-      this.sync_StartAction(c_oAscAsyncActionType.BlockInteraction, c_oAscAsyncAction.UploadImage);
-      this.fCurCallback = function(input) {
-        if (null != input && "imgurl" == input["type"]) {
-          if ("ok" == input["status"]) {
-            var data = input["data"];
-            var urls = {};
-            var firstUrl;
-            for (var i = 0; i < data.length; ++i) {
-              var elem = data[i];
-              if (elem.url) {
-                if (!firstUrl) {
-                  firstUrl = elem.url;
-                }
-                urls[elem.path] = elem.url;
-              }
-            }
-            g_oDocumentUrls.addUrls(urls);
-            if (firstUrl) {
-              fReplaceCallback(firstUrl);
-              ws.objectRender.setGraphicObjectProps(props);
-            } else {
-              t.handlers.trigger("asc_onError", c_oAscError.ID.Unknown, c_oAscError.Level.NoCritical);
-            }
-          } else {
-            t.handlers.trigger("asc_onError", mapAscServerErrorToAscError(parseInt(input["data"])), c_oAscError.Level.NoCritical);
-          }
-        } else {
-          t.handlers.trigger("asc_onError", c_oAscError.ID.Unknown, c_oAscError.Level.NoCritical);
-        }
-        t.sync_EndAction(c_oAscAsyncActionType.BlockInteraction, c_oAscAsyncAction.UploadImage);
-      };
-      sendCommand(this, null, rData);
+      this.asc_addImageDrawingObject(sImageUrl, function (url) {
+        fReplaceCallback('jio:' + url);
+        ws.objectRender.setGraphicObjectProps(props);
+      });
     }
     else{
       ws.objectRender.setGraphicObjectProps(props);

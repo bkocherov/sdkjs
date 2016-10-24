@@ -1321,46 +1321,34 @@
 
 	function UploadImageFiles(files, documentId, documentUserId, jwt, callback)
 	{
-		if (files.length > 0)
-		{
-			var file = files[0];
-			var url = sUploadServiceLocalUrl + '/' + documentId + '/' + documentUserId + '/' + g_oDocumentUrls.getMaxIndex();
-			if (jwt)
-			{
-				url += '/' + jwt;
-			}
-			var xhr = new XMLHttpRequest();
-			xhr.open('POST', url, true);
-			xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-			xhr.onreadystatechange = function ()
-			{
-				if (4 == this.readyState)
-				{
-					if ((this.status == 200 || this.status == 1223))
-					{
-						var urls = JSON.parse(this.responseText);
-						g_oDocumentUrls.addUrls(urls);
-						var firstUrl;
-						for (var i in urls)
-						{
-							if (urls.hasOwnProperty(i))
-							{
-								firstUrl = urls[i];
-								break;
-							}
-						}
-						callback(Asc.c_oAscError.ID.No, firstUrl);
-					}
-					else
-						callback(Asc.c_oAscError.ID.UplImageFileCount);
-				}
-			};
-			xhr.send(file);
-		}
-		else
-		{
-			callback(Asc.c_oAscError.ID.UplImageFileCount);
-		}
+    if (files.length > 0) {
+      var file = files[0],
+        reader = new FileReader();
+      reader.addEventListener('load', function () {
+        Common.Gateway.jio_putAttachment(documentId, undefined, reader.result)
+          .push(function (image_url) {
+            callback(Asc.c_oAscError.ID.No, 'jio:' + image_url);
+          })
+          .push(undefined, function (error) {
+            console.log(error);
+            callback(Asc.c_oAscError.ID.UplImageFileCount);
+          });
+      });
+      reader.readAsDataURL(file);
+      //// not worked. throw csp error
+      //Common.Gateway.jio_putAttachment(documentId, undefined, URL.createObjectURL(file))
+      //  .push(function (image_url) {
+      //    callback(Asc.c_oAscError.ID.No, 'jio:' + image_url);
+      //  })
+      //  .push(undefined, function (error) {
+      //    callback(Asc.c_oAscError.ID.Unknown);
+      //    throw error;
+      //  });
+    }
+    else
+    {
+      callback(Asc.c_oAscError.ID.UplImageFileCount);
+    }
 	}
 
 	function ValidateUploadImage(files)

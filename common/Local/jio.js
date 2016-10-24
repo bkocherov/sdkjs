@@ -1,5 +1,38 @@
 "use strict";
 
+AscCommon.readBlobAsDataURL = function (blob) {
+  var fr = new FileReader();
+  return new RSVP.Promise(function (resolve, reject, notify) {
+    fr.addEventListener("load", function () {
+      resolve(fr.result);
+    });
+    fr.addEventListener("error", reject);
+    fr.addEventListener("progress", notify);
+    fr.readAsDataURL(blob);
+  }, function () {
+    fr.abort();
+  });
+};
+
+AscCommon.downloadUrlAsBlob = function (url) {
+  var xhr = new XMLHttpRequest();
+  return new RSVP.Promise(function (resolve, reject) {
+    xhr.open("GET", url);
+    xhr.responseType = "blob";//force the HTTP response, response-type header to be blob
+    xhr.onload = function () {
+      if (this.status === 200) {
+        resolve(xhr.response);
+      } else {
+        reject(this.status)
+      }
+    };
+    xhr.onerror = reject;
+    xhr.send();
+  }, function () {
+    xhr.abort();
+  });
+};
+
 AscCommon.baseEditorsApi.prototype.jio_open = function () {
   var t = this;
   Common.Gateway.jio_get(t.documentId)
