@@ -2700,58 +2700,11 @@ background-repeat: no-repeat;\
 					return;
 				}
 
-				this.sync_StartAction(c_oAscAsyncActionType.BlockInteraction, c_oAscAsyncAction.UploadImage);
-				this.fCurCallback = function(input)
-				{
-					if (null != input && "imgurl" == input["type"])
-					{
-						if ("ok" == input["status"])
-						{
-							var data = input["data"];
-							var urls = {};
-							var firstUrl;
-							for (var i = 0; i < data.length; ++i)
-							{
-								var elem = data[i];
-								if (elem.url)
-								{
-									if (!firstUrl)
-									{
-										firstUrl = elem.url;
-									}
-									urls[elem.path] = elem.url;
-								}
-							}
-							g_oDocumentUrls.addUrls(urls);
-							if (firstUrl)
-							{
-								image_url = firstUrl;
-								fApplyCallback();
-							}
-							else
-							{
-								oApi.sendEvent("asc_onError", c_oAscError.ID.Unknown, c_oAscError.Level.NoCritical);
-							}
-						}
-						else
-						{
-							oApi.sendEvent("asc_onError", mapAscServerErrorToAscError(parseInt(input["data"])), c_oAscError.Level.NoCritical);
-						}
-					}
-					else
-					{
-						oApi.sendEvent("asc_onError", c_oAscError.ID.Unknown, c_oAscError.Level.NoCritical);
-					}
-					oApi.sync_EndAction(c_oAscAsyncActionType.BlockInteraction, c_oAscAsyncAction.UploadImage);
-				};
-				var rData         = {
-					"id"        : this.documentId,
-					"userid"    : this.documentUserId,
-					"c"         : "imgurl",
-					"saveindex" : g_oDocumentUrls.getMaxIndex(),
-					"data"      : sImageUrl
-				};
-				sendCommand(this, null, rData);
+				this.AddImageUrl(sImageUrl, function (url) {
+					//g_oDocumentUrls.addUrls(urls);
+					image_url = 'jio:' + url;
+					fApplyCallback();
+				});
 			}
 		}
 		else
@@ -3699,7 +3652,7 @@ background-repeat: no-repeat;\
 		// ToDo пока временная функция для стыковки.
 		this.AddImageUrl(url);
 	};
-	asc_docs_api.prototype.AddImageUrl  = function(url)
+	asc_docs_api.prototype.AddImageUrl  = function(url, callback)
 	{
 		if (g_oDocumentUrls.getLocal(url))
 		{
@@ -3707,59 +3660,34 @@ background-repeat: no-repeat;\
 		}
 		else
 		{
-			var rData = {
-				"id"        : this.documentId,
-				"userid"    : this.documentUserId,
-				"c"         : "imgurl",
-				"saveindex" : g_oDocumentUrls.getMaxIndex(),
-				"data"      : url
-			};
-
-			var t = this;
-			this.sync_StartAction(c_oAscAsyncActionType.BlockInteraction, c_oAscAsyncAction.UploadImage);
-			this.fCurCallback = function(input)
-			{
-				if (null != input && "imgurl" == input["type"])
-				{
-					if ("ok" == input["status"])
-					{
-						var data = input["data"];
-						var urls = {};
-						var firstUrl;
-						for (var i = 0; i < data.length; ++i)
-						{
-							var elem = data[i];
-							if (elem.url)
-							{
-								if (!firstUrl)
-								{
-									firstUrl = elem.url;
-								}
-								urls[elem.path] = elem.url;
-							}
-						}
-						g_oDocumentUrls.addUrls(urls);
-						if (firstUrl)
-						{
-							t.AddImageUrlAction(firstUrl);
-						}
-						else
-						{
-							t.sendEvent("asc_onError", c_oAscError.ID.Unknown, c_oAscError.Level.NoCritical);
-						}
-					}
-					else
-					{
-						t.sendEvent("asc_onError", mapAscServerErrorToAscError(parseInt(input["data"])), c_oAscError.Level.NoCritical);
-					}
-				}
-				else
-				{
-					t.sendEvent("asc_onError", c_oAscError.ID.Unknown, c_oAscError.Level.NoCritical);
-				}
-				t.sync_EndAction(c_oAscAsyncActionType.BlockInteraction, c_oAscAsyncAction.UploadImage);
-			};
-			sendCommand(this, null, rData);
+			var t = this,
+				start = url.slice(0, 6),
+				queue = new RSVP.Queue();
+			if (!callback) {
+				callback = function (url) {
+					//g_oDocumentUrls.addUrls(urls);
+					t.AddImageUrlAction('jio:' + url);
+				};
+			}
+			queue.push(function () {
+				return url;
+			});
+			//this.sync_StartAction(c_oAscAsyncActionType.BlockInteraction, c_oAscAsyncAction.UploadImage);
+			if (0 !== start.indexOf('data:')) {
+				queue
+					.push(AscCommon.downloadUrlAsBlob)
+					.push(AscCommon.readBlobAsDataURL);
+			}
+			return queue.push(function (dataUrl) {
+					return Common.Gateway.jio_putAttachment(t.documentId, undefined, dataUrl);
+				})
+				.push(callback)
+				//.push(function () {t.sync_EndAction(c_oAscAsyncActionType.BlockInteraction, c_oAscAsyncAction.UploadImage);})
+				.push(undefined, function (error) {
+					console.log(error);
+          t.sendEvent("asc_onError", c_oAscError.ID.Unknown, c_oAscError.Level.NoCritical);
+					//t.sync_EndAction(c_oAscAsyncActionType.BlockInteraction, c_oAscAsyncAction.UploadImage);
+				});
 		}
 	};
 
@@ -3920,70 +3848,11 @@ background-repeat: no-repeat;\
 			}
 			else
 			{
-				this.sync_StartAction(c_oAscAsyncActionType.BlockInteraction, c_oAscAsyncAction.UploadImage);
-
-				if (window["AscDesktopEditor"])
-                {
-                    var _url = window["AscDesktopEditor"]["LocalFileGetImageUrl"](sImageUrl);
-                    _url     = g_oDocumentUrls.getImageUrl(_url);
-                    ImagePr.ImageUrl = _url;
-                    fApplyCallback();
-                    this.sync_EndAction(c_oAscAsyncActionType.BlockInteraction, c_oAscAsyncAction.UploadImage);
-                    return;
-                }
-
-				this.fCurCallback = function(input)
-				{
-					if (null != input && "imgurl" == input["type"])
-					{
-						if ("ok" == input["status"])
-						{
-							var data = input["data"];
-							var urls = {};
-							var firstUrl;
-							for (var i = 0; i < data.length; ++i)
-							{
-								var elem = data[i];
-								if (elem.url)
-								{
-									if (!firstUrl)
-									{
-										firstUrl = elem.url;
-									}
-									urls[elem.path] = elem.url;
-								}
-							}
-							g_oDocumentUrls.addUrls(urls);
-							if (firstUrl)
-							{
-								ImagePr.ImageUrl = firstUrl;
-								fApplyCallback();
-							}
-							else
-							{
-								oApi.sendEvent("asc_onError", c_oAscError.ID.Unknown, c_oAscError.Level.NoCritical);
-							}
-						}
-						else
-						{
-							oApi.sendEvent("asc_onError", mapAscServerErrorToAscError(parseInt(input["data"])), c_oAscError.Level.NoCritical);
-						}
-					}
-					else
-					{
-						oApi.sendEvent("asc_onError", c_oAscError.ID.Unknown, c_oAscError.Level.NoCritical);
-					}
-					oApi.sync_EndAction(c_oAscAsyncActionType.BlockInteraction, c_oAscAsyncAction.UploadImage);
-				};
-
-				var rData = {
-					"id"        : this.documentId,
-					"userid"    : this.documentUserId,
-					"c"         : "imgurl",
-					"saveindex" : g_oDocumentUrls.getMaxIndex(),
-					"data"      : sImageUrl
-				};
-				sendCommand(this, null, rData);
+				this.AddImageUrl(sImageUrl, function (url) {
+					//g_oDocumentUrls.addUrls(urls);
+					ImagePr.ImageUrl = 'jio:' + url;
+					fApplyCallback();
+				});
 			}
 		}
 		else
