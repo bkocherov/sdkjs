@@ -4524,9 +4524,8 @@ background-repeat: no-repeat;\
 					return url;
 				})
 				.push(AscCommon.downloadUrlAsBlob)
-				.push(AscCommon.readBlobAsDataURL)
-				.push(function (dataUrl) {
-					return Common.Gateway.jio_putAttachment(t.documentId, undefined, dataUrl);
+				.push(function (blob) {
+					return Common.Gateway.jio_putAttachment(t.documentId, undefined, blob);
 				})
 				.push(callback)
 				//.push(function () {t.sync_EndAction(c_oAscAsyncActionType.BlockInteraction, c_oAscAsyncAction.UploadImage);})
