@@ -3674,12 +3674,10 @@ background-repeat: no-repeat;\
 			});
 			//this.sync_StartAction(c_oAscAsyncActionType.BlockInteraction, c_oAscAsyncAction.UploadImage);
 			if (0 !== start.indexOf('data:')) {
-				queue
-					.push(AscCommon.downloadUrlAsBlob)
-					.push(AscCommon.readBlobAsDataURL);
+				queue.push(AscCommon.downloadUrlAsBlob)
 			}
-			return queue.push(function (dataUrl) {
-					return Common.Gateway.jio_putAttachment(t.documentId, undefined, dataUrl);
+			return queue.push(function (blob) {
+					return Common.Gateway.jio_putAttachment(t.documentId, undefined, blob);
 				})
 				.push(callback)
 				//.push(function () {t.sync_EndAction(c_oAscAsyncActionType.BlockInteraction, c_oAscAsyncAction.UploadImage);})

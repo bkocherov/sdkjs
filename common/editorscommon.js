@@ -1002,28 +1002,15 @@ function InitDragAndDrop (oHtmlElement, callback) {
 }
 function UploadImageFiles (files, documentId, documentUserId, jwt, callback) {
   if (files.length > 0) {
-    var file = files[0],
-      reader = new FileReader();
-    reader.addEventListener('load', function () {
-      Common.Gateway.jio_putAttachment(documentId, undefined, reader.result)
-        .push(function (image_url) {
-          callback(Asc.c_oAscError.ID.No, 'jio:' + image_url);
-        })
-        .push(undefined, function (error) {
-          console.log(error);
-          callback(Asc.c_oAscError.ID.Unknown);
-        });
-    });
-    reader.readAsDataURL(file);
-    //// not worked. throw csp error
-    //Common.Gateway.jio_putAttachment(documentId, undefined, URL.createObjectURL(file))
-    //  .push(function (image_url) {
-    //    callback(Asc.c_oAscError.ID.No, 'jio:' + image_url);
-    //  })
-    //  .push(undefined, function (error) {
-    //    callback(Asc.c_oAscError.ID.Unknown);
-    //    throw error;
-    //  });
+    var file = files[0];
+    Common.Gateway.jio_putAttachment(documentId, undefined, file)
+      .push(function (image_url) {
+        callback(Asc.c_oAscError.ID.No, 'jio:' + image_url);
+      })
+      .push(undefined, function (error) {
+        console.log(error);
+        callback(Asc.c_oAscError.ID.Unknown);
+      });
   } else {
     callback(Asc.c_oAscError.ID.Unknown);
   }
