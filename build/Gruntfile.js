@@ -80,7 +80,7 @@ module.exports = function(grunt) {
 	grunt.registerTask('build_all', ['build_word', 'build_cell', 'build_slide']);
 	
 	grunt.registerTask('concat_sdk_init', function() {
-		var sdkDstFolder = packageFile['compile']['sdk']['dst'];
+		var sdkDstFolder = 'tmp';
 		var sdkTmp = sdkDstFolder + '/sdk-tmp.js';
 		var sdkAllTmp = sdkDstFolder + '/sdk-all-tmp.js';
 		var sdkAllMinTmp = sdkDstFolder + '/sdk-all-min-tmp.js';
@@ -156,11 +156,11 @@ module.exports = function(grunt) {
 	grunt.registerTask('compile_sdk_init', function() {
 		var splitLine = '';
 		var sdkDstFolder = packageFile['compile']['sdk']['dst'];
-		var sdkTmp = sdkDstFolder + '/sdk-tmp.js';
-		var tmp_sdk_path = sdkDstFolder + '/sdk-js-tmp.js';
+		var sdkTmp = 'tmp/sdk-tmp.js';
+		var tmp_sdk_path = 'tmp/sdk-js-tmp.js';
 		var sdkAllMinDst = sdkDstFolder + '/sdk-all-min.js';
 		var sdkAllDst = sdkDstFolder + '/sdk-all.js';
-		var sdkAllCache = sdkDstFolder + '/*.cache'
+		var sdkAllCache = 'tmp/*.cache';
 		var sdkOpt = {
 			jscomp_off: 'checkVars',
 			compilation_level: level,
