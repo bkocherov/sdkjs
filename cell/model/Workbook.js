@@ -908,6 +908,11 @@
 			this.buildDefName = {};
 		},
 		calcTree: function() {
+			var dependency_graph = this,
+				formula,
+				i,
+				tasks = [],
+				lazy_value;
 			if (this.lockCounter > 0) {
 				return;
 			}
@@ -924,26 +929,44 @@
 				this._broadcastCells(notifyData, calcTrack);
 			}
 			this._broadcastCellsEnd();
-			for (var i = 0; i < noCalcTrack.length; ++i) {
-				var formula = noCalcTrack[i];
+			for (i = 0; i < noCalcTrack.length; ++i) {
+				formula = noCalcTrack[i];
 				//defName recalc when calc formula containing it. no need calc it
 				formula.setIsDirty(false);
 			}
-			for (var i = 0; i < calcTrack.length; ++i) {
-				var formula = calcTrack[i];
+
+			for (i = 0; i < calcTrack.length; ++i) {
+				formula = calcTrack[i];
 				if (formula.getIsDirty()) {
 					formula.calculate();
 				}
 			}
-			//copy cleanCellCache to prevent recursion in trigger("cleanCellCache")
-			var tmpCellCache = this.cleanCellCache;
-			this.cleanCellCache = {};
-			for (var i in tmpCellCache) {
-				this.wb.handlers.trigger("cleanCellCache", i, {0: tmpCellCache[i]},
-										 AscCommonExcel.c_oAscCanChangeColWidth.none);
+			for (i = calcTrack.length-1; i >= 0; --i) {
+				lazy_value = calcTrack[i].lazy_value;
+				if (lazy_value) {
+					tasks.push(lazy_value());
+				}
 			}
-			AscCommonExcel.g_oVLOOKUPCache.clean();
-			AscCommonExcel.g_oHLOOKUPCache.clean();
+			function end () {
+				//copy cleanCellCache to prevent recursion in trigger("cleanCellCache")
+				var tmpCellCache = dependency_graph.cleanCellCache;
+				dependency_graph.cleanCellCache = {};
+				for (var i in dependency_graph.cleanCellCache) {
+					dependency_graph.wb.handlers.trigger("cleanCellCache", i, {0: tmpCellCache[i]},
+						AscCommonExcel.c_oAscCanChangeColWidth.none);
+				}
+				AscCommonExcel.g_oVLOOKUPCache.clean();
+				AscCommonExcel.g_oHLOOKUPCache.clean();
+			}
+			if (tasks.length > 0) {
+				new RSVP.Queue()
+					.push(function () {
+						return RSVP.all(tasks);
+					})
+					.push(end);
+			} else {
+				end();
+			}
 		},
 		initOpen: function() {
 			this._foreachDefName(function(defName) {
@@ -5387,6 +5410,11 @@
 		this.nCol = -1;
 		this.formulaParsed = null;
 	}
+
+	Cell.prototype.getId = function () {
+		return [this.ws.getId(), this.nRow, this.nCol].join(",");
+	};
+
 	Cell.prototype.getStyle=function(){
 		return this.xfs;
 	};
@@ -5945,7 +5973,7 @@
 			this.setValue("");
 	};
 	Cell.prototype._checkDirty = function(){
-		if(this.formulaParsed && this.formulaParsed.getIsDirty()) {
+		if(this.formulaParsed && this.formulaParsed.getIsDirty() && !this.formulaParsed.queue) {
 			this.formulaParsed.calculate();
 		}
 	};
