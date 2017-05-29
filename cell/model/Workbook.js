@@ -865,6 +865,9 @@
 			this.buildDefName = {};
 		},
 		calcTree: function() {
+			var dependency_graph = this,
+				formula,
+				i;
 			if (this.lockCounter > 0) {
 				return;
 			}
@@ -881,24 +884,32 @@
 				this._broadcastCells(notifyData, calcTrack);
 			}
 			this._broadcastCellsEnd();
-			for (var i = 0; i < noCalcTrack.length; ++i) {
-				var formula = noCalcTrack[i];
+			for (i = 0; i < noCalcTrack.length; ++i) {
+				formula = noCalcTrack[i];
 				//defName recalc when calc formula containing it. no need calc it
 				formula.setIsDirty(false);
 			}
-			for (var i = 0; i < calcTrack.length; ++i) {
-				var formula = calcTrack[i];
+
+			for (i = 0; i < calcTrack.length; ++i) {
+				formula = calcTrack[i];
 				if (formula.getIsDirty()) {
 					formula.calculate();
 				}
 			}
-			for (var i in this.cleanCellCache) {
-				this.wb.handlers.trigger("cleanCellCache", i, {0: this.cleanCellCache[i]},
-										 AscCommonExcel.c_oAscCanChangeColWidth.none);
+			function end () {
+				for (var i in dependency_graph.cleanCellCache) {
+					dependency_graph.wb.handlers.trigger("cleanCellCache", i, {0: dependency_graph.cleanCellCache[i]},
+						AscCommonExcel.c_oAscCanChangeColWidth.none);
+				}
+				dependency_graph.cleanCellCache = {};
+				AscCommonExcel.g_oVLOOKUPCache.clean();
+				AscCommonExcel.g_oHLOOKUPCache.clean();
 			}
-			this.cleanCellCache = {};
-			AscCommonExcel.g_oVLOOKUPCache.clean();
-			AscCommonExcel.g_oHLOOKUPCache.clean();
+			if (formula) {
+				formula.add2calculateQueue(end);
+			} else {
+				end();
+			}
 		},
 		initOpen: function() {
 			this._foreachDefName(function(defName) {
@@ -5271,7 +5282,7 @@ Woorksheet.prototype.isApplyFilterBySheet = function(){
 			this.setValue("");
 	};
 	Cell.prototype._checkDirty = function(){
-		if(this.formulaParsed && this.formulaParsed.getIsDirty()) {
+		if(this.formulaParsed && this.formulaParsed.getIsDirty() && !this.formulaParsed.queue) {
 			this.formulaParsed.calculate();
 		}
 	};
@@ -5825,6 +5836,12 @@ Woorksheet.prototype.isApplyFilterBySheet = function(){
 			cell.setValueData(val);
 		});
 		History.EndTransaction();
+	};
+	Range.prototype.updateOnScreen = function () {
+    this.worksheet.workbook
+			.handlers.trigger("cleanCellCache",
+			this.worksheet.getId(), {0: this.bbox},
+      AscCommonExcel.c_oAscCanChangeColWidth.none);
 	};
 	Range.prototype.setCellStyle=function(val){
 		History.Create_NewPoint();

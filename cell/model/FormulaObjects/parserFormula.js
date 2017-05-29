@@ -50,6 +50,8 @@ function (window, undefined) {
 
   var c_oAscError = Asc.c_oAscError;
 
+  var calculation_queue;
+
 	var TOK_TYPE_OPERAND = 1;
 	var TOK_TYPE_FUNCTION = 2;
 	var TOK_TYPE_SUBEXPR = 3;
@@ -653,6 +655,44 @@ parserHelp.setDigitSeparator(AscCommon.g_oDefaultCultureInfo.NumberDecimalSepara
 	cBaseType.prototype.toLocaleString = function () {
 		return this.toString();
 	};
+  cBaseType.prototype.CalculatePromise = function (arg, rangeCell, isDefName, ws, context) {
+    var t = this,
+			i,
+			length,
+			promise_flag = false;
+
+    for (i = 0, length = arg.length; i < length; ++i) {
+    	if (typeof arg[i] === "function") {
+    		promise_flag = true;
+    		break;
+			}
+		}
+    if (promise_flag) {
+    	return function () {
+		    return new RSVP.Queue()
+			    .push(function () {
+				    return RSVP.all(arg.map(function (z) {
+				    	if (typeof z === "function") {
+				    		return z();
+					    } else {
+				    		return z;
+					    }
+				    }));
+			    })
+			    .push(function (arg) {
+				    return t.Calculate(arg, rangeCell, isDefName, ws, context);
+			    })
+			    .push(function (ret) {
+			    	if (typeof ret === "function") {
+			    		return ret();
+				    }
+			    	return ret;
+			    });
+	    };
+		} else {
+    	return t.Calculate(arg, rangeCell, isDefName, ws, context);
+		}
+  };
 
 	/*Basic types of an elements used into formulas*/
 	/**
@@ -2241,6 +2281,7 @@ parserHelp.setDigitSeparator(AscCommon.g_oDefaultCultureInfo.NumberDecimalSepara
 	cBaseOperator.prototype.Calculate = function () {
 		return null;
 	};
+	cBaseOperator.prototype.CalculatePromise = cBaseType.prototype.CalculatePromise;
 	cBaseOperator.prototype.Assemble = function (arg) {
 		var str = "";
 		if (this.argumentsCurrent === 2) {
@@ -2286,6 +2327,7 @@ parserHelp.setDigitSeparator(AscCommon.g_oDefaultCultureInfo.NumberDecimalSepara
 		this.value = new cError(cErrorType.wrong_name);
 		return this.value;
 	};
+	cBaseFunction.prototype.CalculatePromise = cBaseOperator.prototype.CalculatePromise
 	cBaseFunction.prototype.DecrementArguments = function () {
 		--this.argumentsCurrent;
 	};
@@ -3986,7 +4028,7 @@ function parserFormula( formula, parent, _ws ) {
 					this.parent.onFormulaEvent(AscCommon.c_oNotifyParentType.Change, eventData);
 				}
 			}
-		} else if (AscCommon.c_oNotifyType.Changed === data.type) {
+			} else if (AscCommon.c_oNotifyType.Changed === data.type) {
 			if (this.parent && this.parent.onFormulaEvent) {
 				this.parent.onFormulaEvent(AscCommon.c_oNotifyParentType.Change, eventData);
 			}
@@ -4851,7 +4893,38 @@ parserFormula.prototype.parse = function(local, digitDelim) {
   }
 };
 
+	parserFormula.prototype.add2calculateQueue = function (callback) {
+		if (!calculation_queue) {
+			calculation_queue = new RSVP.Queue();
+		}
+		var deferred = calculation_queue.calculation_queue_deferred;
+
+
+    // Unblock queue
+    if (deferred !== undefined) {
+      deferred.resolve("Another event added");
+    }
+
+    // Add next callback
+    try {
+      calculation_queue.push(callback);
+    } catch (error) {
+      throw new Error("calculation crashed... " +
+                      calculation_queue.rejectedReason.toString());
+    }
+
+    // Block the queue
+    deferred = RSVP.defer();
+    calculation_queue.calculation_queue_deferred = deferred;
+    calculation_queue.push(function () {
+      return deferred.promise;
+    });
+	};
+
 	parserFormula.prototype.calculate = function (opt_defName, opt_range) {
+		var ws_id = this.ws.getId(),
+			value,
+			formula = this;
 		if (this.isCalculate) {
 			this.value = new cError(cErrorType.bad_reference);
 			this._endCalculate();
@@ -4873,13 +4946,19 @@ parserFormula.prototype.parse = function(local, digitDelim) {
 			rangeCell = this.ws.getCell3(0, 0);
 		}
 
-		var elemArr = [], _tmp, numFormat = -1, currentElement = null;
+		var elemArr = [], _tmp, numFormat = -1, currentElement = null,
+			nextElement = null;
 		for (var i = 0; i < this.outStack.length; i++) {
 			currentElement = this.outStack[i];
 			if (currentElement.name == "(") {
 				continue;
 			}
 			if (currentElement.type === cElementType.operator || currentElement.type === cElementType.func) {
+        if (i+1 < this.outStack.length) {
+        	nextElement = this.outStack[i+1];
+        } else {
+        	nextElement = null;
+        }
 				if (elemArr.length < currentElement.getArguments()) {
 					elemArr = [];
 					this.value = new cError(cErrorType.unsupported_function);
@@ -4890,7 +4969,8 @@ parserFormula.prototype.parse = function(local, digitDelim) {
 					for (var ind = 0; ind < currentElement.getArguments(); ind++) {
 						arg.unshift(elemArr.pop());
 					}
-					_tmp = currentElement.Calculate(arg, rangeCell, opt_defName, this.ws.getId());
+          _tmp = currentElement.CalculatePromise(arg, rangeCell, opt_defName, ws_id, nextElement);
+          // _tmp = currentElement.Calculate(arg, rangeCell, opt_defName, ws_id, nextElement);
 					if (null != _tmp.numFormat) {
 						numFormat = _tmp.numFormat;
 					} else if (0 > numFormat || cNumFormatNone === currentElement.numFormat) {
@@ -4899,15 +4979,35 @@ parserFormula.prototype.parse = function(local, digitDelim) {
 					elemArr.push(_tmp);
 				}
 			} else if (currentElement.type === cElementType.name || currentElement.type === cElementType.name3D) {
-				elemArr.push(currentElement.Calculate(arg, rangeCell));
+				elemArr.push(currentElement.Calculate(null, rangeCell));
 			} else if (currentElement.type === cElementType.table) {
 				elemArr.push(currentElement.toRef(rangeCell.getBBox0()));
 			} else {
 				elemArr.push(currentElement);
 			}
 		}
-		this.value = elemArr.pop();
-		this.value.numFormat = numFormat;
+		value = elemArr.pop();
+		if (typeof value === "function") {
+			this.value = new cError(cErrorType.getting_data);
+			this.queue = true;
+			this.add2calculateQueue(function () {
+				return new RSVP.Queue()
+					.push(function () {
+						return value();
+					})
+					.push(function (ret) {
+						formula.value = ret;
+						formula.value.numFormat = numFormat;
+						formula._endCalculate();
+						rangeCell.updateOnScreen();
+						formula.queue = false;
+						return formula.value;
+					});
+			});
+		} else {
+			this.value = value;
+			this.value.numFormat = numFormat;
+		}
 
 		this._endCalculate();
 		return this.value;
