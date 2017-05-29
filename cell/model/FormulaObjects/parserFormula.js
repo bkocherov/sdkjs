@@ -670,6 +670,112 @@ parserHelp.setDigitSeparator(AscCommon.g_oDefaultCultureInfo.NumberDecimalSepara
 	cBaseType.prototype.toLocaleString = function () {
 		return this.toString();
 	};
+  cBaseType.prototype.CalculatePromise = function (arg, opt_bbox, isDefName, ws) {
+  	// depromise args
+    var t = this,
+      lazy_formulas = [],
+      lazy_found;
+
+    function check_args_promise() {
+    	var promise_flag = false,
+	      element,
+	      length,
+	      i;
+	    function cellForge(cell) {
+		    if (cell && cell.formulaParsed &&
+			    (cell.formulaParsed.lazy_value || cell.formulaParsed.queue)) {
+			    promise_flag = true;
+			    lazy_formulas.push(cell.formulaParsed);
+		    }
+	    }
+
+	    for (i = 0, length = arg.length; i < length; ++i) {
+		    element = arg[i];
+		    if (typeof element === "function") {
+			    promise_flag = true;
+		    }
+		    if (element instanceof cArea || element instanceof cArea3D) {
+		    	element.foreach(cellForge);
+		    }
+		    if (element instanceof cRef || element instanceof cRef3D) {
+			    element.getRange().getCells().forEach(cellForge);
+		    }
+	    }
+	    return promise_flag;
+    }
+
+    lazy_found = check_args_promise();
+
+	  if (t.CalculateLazy) {
+		  return function () {
+		  	var queue = new RSVP.Queue();
+			  if (lazy_formulas.length > 0) {
+			  	lazy_formulas.forEach(function (formula) {
+					  var lazy = formula.lazy_value;
+					  if (lazy) {
+						  // if value lazy run it
+						  lazy();
+					  }
+					  if (formula.queue) {
+					  	// add dependence from already
+						  // running but not computed lazy
+					  	queue.push(function () {
+							  return formula.queue;
+						  });
+					  }
+				  });
+			  }
+		  	queue
+				  .push(function () {
+					  return RSVP.all(arg.map(function (z) {
+						  if (typeof z === "function") {
+							  return z();
+						  } else {
+							  return z;
+						  }
+					  }));
+				  });
+			  return t.CalculateLazy(queue, opt_bbox, isDefName, ws);
+		  };
+	  } else {
+	    if (lazy_found) {
+		    return function () {
+			    var queue = new RSVP.Queue();
+			    if (lazy_formulas.length > 0) {
+				    lazy_formulas.forEach(function (formula) {
+					    var lazy = formula.lazy_value;
+					    if (lazy) {
+						    // if value lazy add it dependence list
+						    lazy();
+					    }
+					    if (formula.queue) {
+						    // add dependence from already
+						    // running but not computed lazy
+						    queue.push(function () {
+							    return formula.queue;
+						    });
+					    }
+				    });
+			    }
+			    return queue
+				    .push(function () {
+					    return RSVP.all(arg.map(function (z) {
+						    if (typeof z === "function") {
+							    return z();
+						    } else {
+							    return z;
+						    }
+					    }));
+				    })
+				    .push(function (arg) {
+					    return t.Calculate(arg, opt_bbox, isDefName, ws);
+				    });
+		    };
+	    } else {
+		    return t.Calculate(arg, opt_bbox, isDefName, ws);
+	    }
+	  }
+  };
 
 	/*Basic types of an elements used into formulas*/
 	/**
@@ -2347,6 +2453,7 @@ parserHelp.setDigitSeparator(AscCommon.g_oDefaultCultureInfo.NumberDecimalSepara
 	cBaseOperator.prototype.Calculate = function () {
 		return null;
 	};
+	cBaseOperator.prototype.CalculatePromise = cBaseType.prototype.CalculatePromise;
 	cBaseOperator.prototype.Assemble = function (arg) {
 		var str = "";
 		if (this.argumentsCurrent === 2) {
@@ -2394,6 +2501,7 @@ parserHelp.setDigitSeparator(AscCommon.g_oDefaultCultureInfo.NumberDecimalSepara
 		this.value = new cError(cErrorType.wrong_name);
 		return this.value;
 	};
+	cBaseFunction.prototype.CalculatePromise = cBaseOperator.prototype.CalculatePromise
 	cBaseFunction.prototype.DecrementArguments = function () {
 		--this.argumentsCurrent;
 	};
@@ -4225,7 +4333,7 @@ function parserFormula( formula, parent, _ws ) {
 					this.parent.onFormulaEvent(AscCommon.c_oNotifyParentType.Change, eventData);
 				}
 			}
-		} else if (AscCommon.c_oNotifyType.Changed === data.type) {
+			} else if (AscCommon.c_oNotifyType.Changed === data.type) {
 			if (this.parent && this.parent.onFormulaEvent) {
 				this.parent.onFormulaEvent(AscCommon.c_oNotifyParentType.Change, eventData);
 			}
@@ -5102,6 +5210,8 @@ parserFormula.prototype.parse = function(local, digitDelim) {
 };
 
 	parserFormula.prototype.calculate = function (opt_defName, opt_bbox, opt_offset) {
+		var value,
+			formula = this;
 		if (this.isCalculate && (!this.calculateDefName || this.calculateDefName[opt_bbox ? opt_bbox.getName() :
 		 opt_bbox])) {
 			//cycle
@@ -5145,7 +5255,7 @@ parserFormula.prototype.parse = function(local, digitDelim) {
 					for (var ind = 0; ind < currentElement.getArguments(); ind++) {
 						arg.unshift(elemArr.pop());
 					}
-					_tmp = currentElement.Calculate(arg, opt_bbox, opt_defName, this.ws);
+					_tmp = currentElement.CalculatePromise(arg, opt_bbox, opt_defName, this.ws);
 					if (cNumFormatNull !== _tmp.numFormat) {
 						numFormat = _tmp.numFormat;
 					} else if (0 > numFormat || cNumFormatNone === currentElement.numFormat) {
@@ -5163,8 +5273,28 @@ parserFormula.prototype.parse = function(local, digitDelim) {
 				elemArr.push(currentElement);
 			}
 		}
-		this.value = elemArr.pop();
-		this.value.numFormat = numFormat;
+		value = elemArr.pop();
+		if (typeof value === "function") {
+			this.value = new cError(cErrorType.getting_data);
+			this.queue = true;
+			this.lazy_value = function () {
+				formula.lazy_value = null;
+				formula.queue = value()
+					.push(function (ret) {
+						formula.value = ret;
+						formula.value.numFormat = numFormat;
+						formula._endCalculate();
+						opt_bbox.updateOnScreen();
+						formula.queue = false;
+						// formula.lazy_value = null;
+						return formula.value;
+					});
+				return formula.queue
+			}
+		} else {
+			this.value = value;
+			this.value.numFormat = numFormat;
+		}
 
 		this._endCalculate();
 		return this.value;
