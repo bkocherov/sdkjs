@@ -867,7 +867,9 @@
 		calcTree: function() {
 			var dependency_graph = this,
 				formula,
-				i;
+				i,
+				tasks = [],
+				lazy_value;
 			if (this.lockCounter > 0) {
 				return;
 			}
@@ -896,6 +898,12 @@
 					formula.calculate();
 				}
 			}
+			for (i = calcTrack.length-1; i >= 0; --i) {
+				lazy_value = calcTrack[i].lazy_value;
+				if (lazy_value) {
+					tasks.push(lazy_value());
+				}
+			}
 			function end () {
 				for (var i in dependency_graph.cleanCellCache) {
 					dependency_graph.wb.handlers.trigger("cleanCellCache", i, {0: dependency_graph.cleanCellCache[i]},
@@ -905,8 +913,12 @@
 				AscCommonExcel.g_oVLOOKUPCache.clean();
 				AscCommonExcel.g_oHLOOKUPCache.clean();
 			}
-			if (formula) {
-				formula.add2calculateQueue(end);
+			if (tasks.length > 0) {
+				new RSVP.Queue()
+					.push(function () {
+						return RSVP.all(tasks);
+					})
+					.push(end);
 			} else {
 				end();
 			}
@@ -4680,6 +4692,11 @@ Woorksheet.prototype.isApplyFilterBySheet = function(){
 		this.nCol = -1;
 		this.formulaParsed = null;
 	}
+
+	Cell.prototype.getId = function () {
+		return [this.ws.getId(), this.nRow, this.nCol].join(",");
+	};
+
 	Cell.prototype.getStyle=function(){
 		return this.xfs;
 	};

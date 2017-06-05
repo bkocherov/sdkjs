@@ -77,24 +77,23 @@
 	function xmla_request(func, prop) {
 		var xmla = new Xmla({async: true});
 		// return function () {
-		return new RSVP.Promise(function (resolve, reject) {
-			prop.success = function (xmla, options, response) {
-				if (response.numRows > 0) {
-					resolve(response);
-				} else {
-					reject();
-				}
-			};
-			prop.error = function (xmla, options, response) {
-				reject(response);
-			};
-			xmla[func](prop);
-		});
+		return new RSVP.Queue()
+			.push(function () {
+				return new RSVP.Promise(function (resolve, reject) {
+					prop.success = function (xmla, options, response) {
+						resolve(response);
+					};
+					prop.error = function (xmla, options, response) {
+						reject(response);
+					};
+					xmla[func](prop);
+				});
+			});
 	}
 
 	function xmla_request_retry(func, prop) {
 		return xmla_request(func, prop)
-			.then(undefined, function (response) {
+			.push(undefined, function (response) {
 				// fix mondrian Internal and Sql errors
 				if (response) {
 					switch (response.code) {
@@ -130,7 +129,10 @@
 		if (scheme) {
 			return scheme;
 		} else {
-			scheme = {members: {}};
+			scheme = {
+				members: {},
+				hierarchies: {}
+			};
 			cubeScheme[connection] = scheme;
 			return scheme;
 		}
@@ -161,7 +163,7 @@
 				if (array.length > 0) {
 					// filter members already existed
 					members = members.filter(function (i) {
-						return i in array;
+						return array.indexOf(i) === -1;
 					});
 					members = members.concat(array);
 				}
@@ -171,7 +173,7 @@
 				if (cell) {
 					if (cell.oValue.type === cElementType.error) {
 						// debugger;
-						throw "";
+						throw "refenced cell contain error";
 					}
 					if (cell.formulaParsed && cell.formulaParsed.value) {
 						stringForge(cell.formulaParsed.value);
@@ -200,95 +202,130 @@
 		};
 	}
 
+	var AddCubeValueCalculate = (function () {
+		var deferred = RSVP.defer(),
+			cells = [];
+		return function (cell_id) {
+			if (cells.indexOf(cell_id) === -1) {
+				cells.push(cell_id);
+			}
+			// console.log('+ ' + cells);
+			return function () {
+				var i = cells.indexOf(cell_id);
+				if (i !== -1) {
+					cells.splice(i, 1);
+				}
+				// console.log('-' + cells);
+				if (cells.length === 0) {
+					deferred.resolve();
+					deferred = RSVP.defer();
+					return {};
+				}
+				return deferred.promise;
+			};
+		};
+	})();
+
 	function execute(connection) {
-		return new RSVP.Queue()
-			.push(function () {
-				var settings = getProperties(connection),
-					prop = settings.prop,
-					scheme = getScheme(),
-					hierarchies = scheme.hierarchies,
-					hierarchy,
-					mdx = [];
-				for (hierarchy in hierarchies) {
-					mdx.push("{" +hierarchies[hierarchy].join(",") + "}");
-				}
-				prop.statement = "SELECT " + mdx.join("*") +
-					" ON 0 FROM [" + settings.cube + "]";
-				return xmla_request("execute", prop);
-			})
-			.push(function (dataset) {
-				var cellset = dataset.getCellset(),
-					axis_count = dataset.axisCount(),
-					cell_id = 0,
-					axis_id,
-					axis,
-					cube = {
-						axes: {length: axis_count},
-						members: {},
-						hierarchies: {length: 0},
-						cells: []
-					};
-
-
-				function collectAxes(axisIndex, parent_members) {
-					var member;
-					if (typeof(axisIndex) === "undefined") {
-						axisIndex = axis_count - 1;
-						parent_members = [];
+		var scheme = getScheme(connection);
+		if (!scheme.execute) {
+			scheme.execute = RSVP.defer();
+			new RSVP.Queue()
+				.push(function () {
+					var settings = getProperties(connection),
+						prop = settings.prop,
+						hierarchies = scheme.hierarchies,
+						hierarchy,
+						mdx = [];
+					for (hierarchy in hierarchies) {
+						mdx.push("{" + hierarchies[hierarchy].join(",") + "}");
 					}
-					axis = dataset.getAxis(axisIndex);
-
-					axis.eachTuple(function (tuple) {
-						var coordinate_tuple = [];
-						this.eachHierarchy(function (hierarchy) {
-							member = this.member();
-							coordinate_tuple.push(member.UName);
-						});
-
-						if (axisIndex) {
-							collectAxes(axisIndex - 1, parent_members.concat(coordinate_tuple));
-						} else {
-							console.log(parent_members.concat(coordinate_tuple) + ' - ' + cube.cells[cell_id]);
-							cell_id++;
-						}
-					});
-					axis.reset();
-				}
-
-				for (axis_id = 0; axis_id < axis_count; axis_id++) {
-					axis = dataset.getAxis(axis_id);
-					cube.axes[axis_id] = {
-						tuples: {},
-						length: 0
-					};
-					axis.eachTuple(function (tuple) {
-						var coordinate_tuple = [];
-						axis.eachHierarchy(function () {
-							var member = this.member();
-							if (!cube.members.hasOwnProperty(member.UName)) {
-								cube.members[member.UName] = member;
-							}
-							coordinate_tuple.push(member.UName);
-						});
-						cube.axes[axis_id].tuples[coordinate_tuple.join(',')] = tuple.index;
-						cube.axes[axis_id].length++;
-					});
-					axis.eachHierarchy(function (hierarchy) {
-						cube.hierarchies[hierarchy.name] = {
-							axis_id: axis_id, tuple_id: hierarchy.index, name: hierarchy.name
+					prop.statement = "SELECT " + mdx.join("*") +
+						" ON 0 FROM [" + settings.cube + "]";
+					return xmla_request("execute", prop);
+				})
+				.push(function (dataset) {
+					var cellset = dataset.getCellset(),
+						axis_count = dataset.axisCount(),
+						cell_id = 0,
+						axis_id,
+						axis,
+						cube = {
+							axes: {length: axis_count},
+							members: {},
+							hierarchies: {length: 0},
+							cells: []
 						};
-						cube.hierarchies[cube.hierarchies.length] = cube.hierarchies[hierarchy.name];
-						cube.hierarchies['' + axis_id + ',' + hierarchy.index] = cube.hierarchies[hierarchy.name];
-						cube.hierarchies.length++;
-					});
-				}
 
-				do {
-					cube.cells[cellset.cellOrdinal()] = cellset.cellValue();
-				} while (cellset.nextCell() > 0);
-				collectAxes();
-				return cube;
-			});
+
+					function collectAxes(axisIndex, parent_members) {
+						var member;
+						if (typeof(axisIndex) === "undefined") {
+							axisIndex = axis_count - 1;
+							parent_members = [];
+						}
+						axis = dataset.getAxis(axisIndex);
+
+						axis.eachTuple(function (tuple) {
+							var coordinate_tuple = [];
+							this.eachHierarchy(function (hierarchy) {
+								member = this.member();
+								coordinate_tuple.push(member.UName);
+							});
+
+							if (axisIndex) {
+								collectAxes(axisIndex - 1, parent_members.concat(coordinate_tuple));
+							} else {
+								console.log(parent_members.concat(coordinate_tuple) + ' - ' + cube.cells[cell_id]);
+								cell_id++;
+							}
+						});
+						axis.reset();
+					}
+
+					for (axis_id = 0; axis_id < axis_count; axis_id++) {
+						axis = dataset.getAxis(axis_id);
+						cube.axes[axis_id] = {
+							tuples: {},
+							length: 0
+						};
+						axis.eachTuple(function (tuple) {
+							var coordinate_tuple = [];
+							axis.eachHierarchy(function () {
+								var member = this.member();
+								if (!cube.members.hasOwnProperty(member.UName)) {
+									cube.members[member.UName] = member;
+								}
+								coordinate_tuple.push(member.UName);
+							});
+							cube.axes[axis_id].tuples[coordinate_tuple.join(',')] = tuple.index;
+							cube.axes[axis_id].length++;
+						});
+						axis.eachHierarchy(function (hierarchy) {
+							cube.hierarchies[hierarchy.name] = {
+								axis_id: axis_id, tuple_id: hierarchy.index, name: hierarchy.name
+							};
+							cube.hierarchies[cube.hierarchies.length] = cube.hierarchies[hierarchy.name];
+							cube.hierarchies['' + axis_id + ',' + hierarchy.index] = cube.hierarchies[hierarchy.name];
+							cube.hierarchies.length++;
+						});
+					}
+
+					do {
+						cube.cells[cellset.cellOrdinal()] = cellset.cellValue();
+					} while (cellset.nextCell() > 0);
+					collectAxes();
+					scheme.cube = cube;
+					scheme.execute.resolve(cube);
+					scheme.execute = null;
+					scheme.hierarchies = [];
+				})
+				.push(undefined, function () {
+					scheme.execute = null;
+					scheme.hierarchies = [];
+				});
+		}
+		return scheme.execute.promise;
 	}
 
 	/**
@@ -318,61 +355,69 @@
 	cCUBEMEMBER.prototype.constructor = cCUBEMEMBER;
 	cCUBEMEMBER.prototype.argumentsMin = 2;
 	cCUBEMEMBER.prototype.argumentsMax = 3;
-	cCUBEMEMBER.prototype.Calculate = function (arg) {
-		var connection = getCell(arg[0]),
-			mdx_array = [arg[1]],
-			caption = getCell(arg[2]);
-		if (caption) {
-			caption = caption.getValue();
-		}
-		return function () {
-			return new RSVP.Queue()
-				.push(parseArgs(mdx_array))
-				.push(function (members) {
-					var promises = [],
-						i;
+	cCUBEMEMBER.prototype.CalculateLazy = function (queue) {
+		var connection,
+			caption;
+		return queue
+			.push(function (arg) {
+				connection = getCell(arg[0]);
+				caption = getCell(arg[2]);
+				if (caption) {
+					caption = caption.getValue();
+				}
+				return parseArgs([arg[1]])();
+			})
+			.push(function (members) {
+				var promises = [],
+					i;
 
-					function discoverMember(connection, member_name) {
-						var settings = getProperties(connection),
-							prop = settings.prop;
-						prop.restrictions = {
+				function discoverMember(connection, member_name) {
+					var settings = getProperties(connection),
+						prop = settings.prop;
+					prop.restrictions = {
 //      'CATALOG_NAME': 'FoodMart',
-							'MEMBER_UNIQUE_NAME': member_name,
-							'CUBE_NAME': settings.cube
-						};
-						return xmla_request_retry("discoverMDMembers", prop);
-					}
+						'MEMBER_UNIQUE_NAME': member_name,
+						'CUBE_NAME': settings.cube
+					};
+					return xmla_request_retry("discoverMDMembers", prop)
+						.push(function (response) {
+							if (response.numRows > 0) {
+								return response;
+							} else {
+								throw "member not found";
+							}
+						});
+				}
 
-					for (i = 0; i < members.length; i++) {
-						if (members[i]) {
-							promises.push(discoverMember(connection, members[i]));
-						}
+				for (i = 0; i < members.length; i++) {
+					if (members[i]) {
+						promises.push(discoverMember(connection, members[i]));
 					}
-					return RSVP.all(promises);
-				})
-				.push(function (responses) {
-					var last_id = responses.length - 1,
-						ret,
-						scheme = getScheme(connection);
-					if (!caption) {
-						caption = responses[last_id].getMemberCaption();
+				}
+				return RSVP.all(promises);
+			})
+			.push(function (responses) {
+				var last_id = responses.length - 1,
+					ret,
+					scheme = getScheme(connection);
+				if (!caption) {
+					caption = responses[last_id].getMemberCaption();
+				}
+				ret = new cString(caption);
+				ret.ca = true;
+				ret.cube_value = responses.map(function (r) {
+					var uname = r.getMemberUniqueName(),
+						member = scheme.members[uname];
+					if (!member) {
+						scheme.members[uname] = {h: r.getHierarchyUniqueName()};
 					}
-					ret = new cString(caption);
-					ret.ca = true;
-					ret.cube_value = responses.map(function (r) {
-						var uname = r.getMemberUniqueName(),
-							member = scheme.members[uname];
-						if (!member) {
-							scheme.members[uname] = {h: r.getHierarchyUniqueName()};
-						}
-						return uname;
-					});
-					return ret;
-				})
-				.push(undefined, function () {
-					return new cError(cErrorType.not_available);
+					return uname;
 				});
-		};
+				return ret;
+			})
+			.push(undefined, function () {
+				return new cError(cErrorType.not_available);
+			});
 	};
 	cCUBEMEMBER.prototype.getInfo = function () {
 		return {
@@ -445,18 +490,46 @@
 
 	cCUBEVALUE.prototype = Object.create(cBaseFunction.prototype);
 	cCUBEVALUE.prototype.constructor = cCUBEVALUE;
-	cCUBEVALUE.prototype.Calculate = function (arg, rangeCell, isDefName, ws, context) {
-		var connection = getCell(arg[0]),
-			mdx_array = arg.slice(1);
-		return new RSVP.Queue()
-			.push(parseArgs(mdx_array))
-			.push(function (members, cube) {
+	cCUBEVALUE.prototype.argumentsMin = 2;
+	cCUBEVALUE.prototype.argumentsMax = 5;
+	cCUBEVALUE.prototype.CalculateLazy = function (queue, range) {
+		var scheme,
+			connection,
+			members,
+			current_cell_id = range.getCells()[0].getId(),
+			waiter = AddCubeValueCalculate(current_cell_id);
+		return queue
+			.push(function (arg) {
+				connection = getCell(arg[0]);
+				scheme = getScheme(connection);
+				return parseArgs(arg.slice(1))();
+			})
+			.push(function (m) {
+				members = m;
+				members.forEach(function (member) {
+					var h;
+					h = scheme.hierarchies[scheme.members[member].h];
+					if (!h) {
+						h = [];
+						scheme.hierarchies[scheme.members[member].h] = h;
+					}
+					if (h.indexOf(member) === -1) {
+						h.push(member);
+					}
+				});
+				return waiter();
+			})
+			.push(function () {
+				return execute(connection);
+			})
+			.push(function (cube) {
 				var cell_id = 0,
 					p_d = 1,
 					h,
 					member_path,
 					coordinate = [],
-					i;
+					i,
+					ret;
 				for (i = 0; i < cube.hierarchies.length; i++) {
 					h = cube.hierarchies[i];
 					coordinate[h.axis_id] = [];
@@ -488,11 +561,26 @@
 					cell_id = p_d * axis.tuples[tuple] + cell_id;
 					p_d = p_d * axis.length;
 				});
-				return new cNumber(cube.cells[cell_id]);
+				ret = new cNumber(cube.cells[cell_id]);
+				ret.ca = true;
+				return ret;
 			})
-			.push(undefined, function () {
-				return new cError(cErrorType.not_available);
+			.push(undefined, function (error) {
+				console.log(error, current_cell_id);
+				return waiter()
+					.then(function () {
+						var ret = new cError(cErrorType.not_available);
+						ret.ca = true;
+						return ret;
+
+					});
 			});
+	};
+	// cCUBEVALUE.prototype.Calculate = cCUBEVALUE.prototype.CalculateLazy
+	cCUBEVALUE.prototype.getInfo = function () {
+		return {
+			name: this.name, args: "( connection, member1, member2, .. )"
+		};
 	};
 })
 (window);
