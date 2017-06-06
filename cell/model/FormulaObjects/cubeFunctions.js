@@ -37,7 +37,7 @@
  * @param {Window} window
  * @param {undefined} undefined
  */
-	function (window, undefined) {
+	function (window, console, undefined) {
 	var cBaseFunction = AscCommonExcel.cBaseFunction;
 	var cFormulaFunctionGroup = AscCommonExcel.cFormulaFunctionGroup,
 		cElementType = AscCommonExcel.cElementType,
@@ -120,6 +120,9 @@
 			}
 		};
 		connection = connections[connection];
+		if (!connection) {
+			throw "connection not exist";
+		}
 		connection = JSON.parse(JSON.stringify(connection));
 		return connection;
 	}
@@ -173,7 +176,7 @@
 				if (cell) {
 					if (cell.oValue.type === cElementType.error) {
 						// debugger;
-						throw "refenced cell contain error";
+						throw "referenced cell contain error";
 					}
 					if (cell.formulaParsed && cell.formulaParsed.value) {
 						stringForge(cell.formulaParsed.value);
@@ -328,6 +331,23 @@
 		return scheme.execute.promise;
 	}
 
+	function error_handler(current_cell_id) {
+		return function (error) {
+			console.error(current_cell_id, error);
+			var ret;
+			if (error === "referenced cell contain error") {
+				ret = new cError(cErrorType.wrong_value_type);
+			} else if (error === "connection not exist" ||
+				error instanceof Xmla.Exception) {
+				ret = new cError(cErrorType.wrong_name);
+			} else {
+				ret = new cError(cErrorType.not_available);
+			}
+			ret.ca = true;
+			return ret;
+		};
+	}
+
 	/**
 	 * @constructor
 	 * @extends {AscCommonExcel.cBaseFunction}
@@ -355,8 +375,9 @@
 	cCUBEMEMBER.prototype.constructor = cCUBEMEMBER;
 	cCUBEMEMBER.prototype.argumentsMin = 2;
 	cCUBEMEMBER.prototype.argumentsMax = 3;
-	cCUBEMEMBER.prototype.CalculateLazy = function (queue) {
+	cCUBEMEMBER.prototype.CalculateLazy = function (queue, range) {
 		var connection,
+			current_cell_id = range.getCells()[0].getId(),
 			caption;
 		return queue
 			.push(function (arg) {
@@ -399,7 +420,8 @@
 			.push(function (responses) {
 				var last_id = responses.length - 1,
 					ret,
-					scheme = getScheme(connection);
+					scheme = getScheme(connection),
+					hierarchies = {};
 				if (!caption) {
 					caption = responses[last_id].getMemberCaption();
 				}
@@ -407,21 +429,25 @@
 				ret.ca = true;
 				ret.cube_value = responses.map(function (r) {
 					var uname = r.getMemberUniqueName(),
-						member = scheme.members[uname];
+						member = scheme.members[uname],
+						hierarchy = r.getHierarchyUniqueName();
+					if (hierarchies.hasOwnProperty(hierarchy)) {
+						throw  "The tuple is invalid because there is no intersection for the specified values.";
+					} else {
+						hierarchies[hierarchy] = 1;
+					}
 					if (!member) {
-						scheme.members[uname] = {h: r.getHierarchyUniqueName()};
+						scheme.members[uname] = {h: hierarchy};
 					}
 					return uname;
 				});
 				return ret;
 			})
-			.push(undefined, function () {
-				return new cError(cErrorType.not_available);
-			});
+			.push(undefined, error_handler(current_cell_id));
 	};
 	cCUBEMEMBER.prototype.getInfo = function () {
 		return {
-			name: this.name, args: "( x )"
+			name: this.name, args: "( connection, members, caption )"
 		};
 	};
 
@@ -505,13 +531,20 @@
 				return parseArgs(arg.slice(1))();
 			})
 			.push(function (m) {
+				var hierarchies = {};
 				members = m;
 				members.forEach(function (member) {
-					var h;
-					h = scheme.hierarchies[scheme.members[member].h];
+					var h,
+						hierarchy = scheme.members[member].h;
+					if (hierarchies.hasOwnProperty(hierarchy)) {
+						throw  "The tuple is invalid because there is no intersection for the specified values.";
+					} else {
+						hierarchies[hierarchy] = 1;
+					}
+					h = scheme.hierarchies[hierarchy];
 					if (!h) {
 						h = [];
-						scheme.hierarchies[scheme.members[member].h] = h;
+						scheme.hierarchies[hierarchy] = h;
 					}
 					if (h.indexOf(member) === -1) {
 						h.push(member);
@@ -566,21 +599,17 @@
 				return ret;
 			})
 			.push(undefined, function (error) {
-				console.log(error, current_cell_id);
+				// issue in one cell(cubevalue) not stop calculation in other
 				return waiter()
 					.then(function () {
-						var ret = new cError(cErrorType.not_available);
-						ret.ca = true;
-						return ret;
-
+						return error_handler(current_cell_id)(error);
 					});
 			});
 	};
-	// cCUBEVALUE.prototype.Calculate = cCUBEVALUE.prototype.CalculateLazy
 	cCUBEVALUE.prototype.getInfo = function () {
 		return {
 			name: this.name, args: "( connection, member1, member2, .. )"
 		};
 	};
 })
-(window);
+(window, console);
