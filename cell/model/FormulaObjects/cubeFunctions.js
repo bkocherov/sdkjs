@@ -191,18 +191,12 @@
 			}
 
 			mdx_array.forEach(function (element) {
-				switch (element.type) {
-					case cElementType.cellsRange:
-					case cElementType.cellsRange3D:
-					case cElementType.array:
-						element.foreach(cellForge);
-						break;
-					default:
-						if (element instanceof cRef || element instanceof cRef3D) {
-							element.getRange().getCells().forEach(cellForge);
-						} else {
-							stringForge(element);
-						}
+				if (element instanceof cArea || element instanceof cArea3D) {
+					element.foreach(cellForge);
+				} else if (element instanceof cRef || element instanceof cRef3D) {
+					element.getRange().getCells().forEach(cellForge);
+				} else {
+					stringForge(element);
 				}
 			});
 			return members;
@@ -335,6 +329,68 @@
 		return scheme.execute.promise;
 	}
 
+	function discover_members(connection, members) {
+		var promises = [],
+			hierarchies = {},
+			scheme = getScheme(connection);
+
+		function discoverMember(connection, member_name) {
+			var settings = getProperties(connection),
+				prop = settings.prop;
+			prop.restrictions = {
+//      'CATALOG_NAME': 'FoodMart',
+				'MEMBER_UNIQUE_NAME': member_name,
+				'CUBE_NAME': settings.cube
+			};
+			return xmla_request_retry("discoverMDMembers", prop)
+				.push(function (response) {
+					if (response.numRows > 0) {
+						return response;
+					} else {
+						throw "member not found";
+					}
+				});
+		}
+
+		function check_interseption(hierarchy) {
+			if (hierarchies.hasOwnProperty(hierarchy)) {
+				throw  "The tuple is invalid because there is no intersection for the specified values.";
+			} else {
+				hierarchies[hierarchy] = 1;
+			}
+		}
+
+		members.forEach(function (member) {
+			var cached_member;
+			if (member) {
+				cached_member = scheme.members[member];
+				if (cached_member) {
+					check_interseption(cached_member.h);
+					promises.push(cached_member);
+				} else {
+					promises
+						.push(discoverMember(connection, member)
+							.push(function (r) {
+								var uname = r.getMemberUniqueName(),
+									hierarchy = r.getHierarchyUniqueName(),
+									cached_member;
+								check_interseption(hierarchy);
+								cached_member = {
+									uname: uname,
+									h: hierarchy,
+									caption: r.getMemberCaption()
+								};
+								if (!scheme.members.hasOwnProperty(uname)) {
+									scheme.members[uname] = cached_member;
+								}
+								return cached_member;
+							}));
+				}
+			}
+		});
+		return RSVP.all(promises);
+	}
+
 	function error_handler(current_cell_id) {
 		return function (error) {
 			console.error(current_cell_id, error);
@@ -393,57 +449,19 @@
 				return parseArgs([arg[1]])();
 			})
 			.push(function (members) {
-				var promises = [],
-					i;
-
-				function discoverMember(connection, member_name) {
-					var settings = getProperties(connection),
-						prop = settings.prop;
-					prop.restrictions = {
-//      'CATALOG_NAME': 'FoodMart',
-						'MEMBER_UNIQUE_NAME': member_name,
-						'CUBE_NAME': settings.cube
-					};
-					return xmla_request_retry("discoverMDMembers", prop)
-						.push(function (response) {
-							if (response.numRows > 0) {
-								return response;
-							} else {
-								throw "member not found";
-							}
-						});
-				}
-
-				for (i = 0; i < members.length; i++) {
-					if (members[i]) {
-						promises.push(discoverMember(connection, members[i]));
-					}
-				}
-				return RSVP.all(promises);
+				return discover_members(connection, members);
 			})
-			.push(function (responses) {
-				var last_id = responses.length - 1,
-					ret,
-					scheme = getScheme(connection),
-					hierarchies = {};
+			.push(function (members) {
+				var last_id = members.length - 1,
+					ret;
 				if (!caption) {
-					caption = responses[last_id].getMemberCaption();
+					caption = members[last_id].caption;
 				}
 				ret = new cString(caption);
 				ret.ca = true;
-				ret.cube_value = responses.map(function (r) {
-					var uname = r.getMemberUniqueName(),
-						member = scheme.members[uname],
-						hierarchy = r.getHierarchyUniqueName();
-					if (hierarchies.hasOwnProperty(hierarchy)) {
-						throw  "The tuple is invalid because there is no intersection for the specified values.";
-					} else {
-						hierarchies[hierarchy] = 1;
-					}
-					if (!member) {
-						scheme.members[uname] = {h: hierarchy};
-					}
-					return uname;
+				ret.cube_value = [];
+				members.forEach(function (member) {
+					ret.cube_value.push(member.uname);
 				});
 				return ret;
 			})
@@ -525,7 +543,7 @@
 	cCUBEVALUE.prototype.CalculateLazy = function (queue, range) {
 		var scheme,
 			connection,
-			members,
+			members = [],
 			current_cell_id = range.getCells()[0].getId(),
 			waiter = AddCubeValueCalculate(current_cell_id);
 		return queue
@@ -534,26 +552,29 @@
 				scheme = getScheme(connection);
 				return parseArgs(arg.slice(1))();
 			})
+			.push(function (members) {
+				return discover_members(connection, members);
+			})
 			.push(function (m) {
-				var hierarchies = {};
-				members = m;
-				members.forEach(function (member) {
-					var h,
-						hierarchy = scheme.members[member].h;
-					if (hierarchies.hasOwnProperty(hierarchy)) {
-						throw  "The tuple is invalid because there is no intersection for the specified values.";
-					} else {
-						hierarchies[hierarchy] = 1;
+				var member_uname,
+					member,
+					h,
+					hierarchy;
+				for (member_uname in m) {
+					if (m.hasOwnProperty(member_uname)) {
+						member = m[member_uname];
+						hierarchy = member.h;
+						h = scheme.hierarchies[hierarchy];
+						if (!h) {
+							h = [];
+							scheme.hierarchies[hierarchy] = h;
+						}
+						if (h.indexOf(member.uname) === -1) {
+							h.push(member.uname);
+						}
+						members.push(member.uname);
 					}
-					h = scheme.hierarchies[hierarchy];
-					if (!h) {
-						h = [];
-						scheme.hierarchies[hierarchy] = h;
-					}
-					if (h.indexOf(member) === -1) {
-						h.push(member);
-					}
-				});
+				}
 				return waiter();
 			})
 			.push(function () {
