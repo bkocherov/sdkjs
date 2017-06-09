@@ -321,7 +321,8 @@
 					scheme.execute = null;
 					scheme.hierarchies = [];
 				})
-				.push(undefined, function () {
+				.push(undefined, function (error) {
+					console.error(error);
 					scheme.execute = null;
 					scheme.hierarchies = [];
 				});
@@ -625,8 +626,11 @@
 			})
 			.push(undefined, function (error) {
 				// issue in one cell(cubevalue) not stop calculation in other
-				return waiter()
-					.then(function () {
+				return new RSVP.Queue()
+					.push(function () {
+						return waiter();
+					})
+					.push(function () {
 						return error_handler(current_cell_id)(error);
 					});
 			});
