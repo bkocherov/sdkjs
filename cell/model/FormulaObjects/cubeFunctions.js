@@ -52,7 +52,8 @@
 		cRef3D = AscCommonExcel.cRef3D,
 		cEmpty = AscCommonExcel.cEmpty,
 		cArray = AscCommonExcel.cArray,
-		cubeScheme = {};
+		cubeScheme = {},
+		cubeExecutionScheme = {};
 
 	cFormulaFunctionGroup.Cube = cFormulaFunctionGroup.Cube || [];
 	cFormulaFunctionGroup.Cube.push(cCUBEKPIMEMBER, cCUBEMEMBER, cCUBEMEMBERPROPERTY, cCUBERANKEDMEMBER, cCUBESET,
@@ -106,6 +107,59 @@
 			});
 	}
 
+	function discover_hierarchies(connection) {
+		var settings = getProperties(connection),
+			prop = settings.prop;
+		prop.restrictions = {
+//      'CATALOG_NAME': 'FoodMart',
+// 			'HIERARCHY_NAME': hierarchy_name,
+// 			'HIERARCHY_UNIQUE_NAME': hierarchy_name,
+			'CUBE_NAME': settings.cube
+		};
+		return xmla_request_retry("discoverMDHierarchies", prop)
+			.push(function (response) {
+				var hierarchies = {},
+					hierarchy,
+					uname,
+					caption,
+					all_member,
+					dimension_uname,
+					dimension,
+					dimensions = {};
+				while (response.hasMoreRows()) {
+					uname = response.getHierarchyUniqueName();
+					caption = response.getHierarchyCaption();
+					all_member = response.getAllMember();
+					dimension_uname = response.getDimensionUniqueName();
+					dimension = dimensions[dimension_uname];
+					if (!dimension) {
+						dimension = {
+							uname: dimension_uname,
+							all_member: all_member
+						};
+						dimensions[dimension_uname] = dimension;
+					}
+					if (!dimension.all_member && all_member) {
+						dimension.all_member = all_member;
+					}
+					hierarchy = {
+						uname: uname,
+						caption: caption,
+						all_member: all_member,
+						dimension_uname: dimension_uname,
+						dimension: dimension
+					};
+					hierarchies[uname] = hierarchy;
+					hierarchies[caption] = hierarchy;
+					response.nextRow();
+				}
+				return {
+					hierarchies: hierarchies,
+					dimensions: dimensions
+				};
+			});
+	}
+
 	function getProperties(connection) {
 		var connections = {
 			xmla: {
@@ -128,7 +182,32 @@
 	}
 
 	function getScheme(connection) {
-		var scheme = cubeScheme[connection];
+		var scheme = cubeScheme[connection],
+			queue = new RSVP.Queue();
+		if (scheme) {
+			queue.push(function () {
+				return scheme;
+			});
+		} else {
+			queue
+				.push(function () {
+					return discover_hierarchies(connection);
+				})
+				.push(function (arg) {
+					scheme = {
+						members: {},
+						hierarchies: arg.hierarchies,
+						dimensions: arg.dimensions
+					};
+					cubeScheme[connection] = scheme;
+					return scheme;
+				});
+		}
+		return queue;
+	}
+
+	function getExecutionScheme(connection) {
+		var scheme = cubeExecutionScheme[connection];
 		if (scheme) {
 			return scheme;
 		} else {
@@ -136,7 +215,7 @@
 				members: {},
 				hierarchies: {}
 			};
-			cubeScheme[connection] = scheme;
+			cubeExecutionScheme[connection] = scheme;
 			return scheme;
 		}
 	}
@@ -224,18 +303,27 @@
 	})();
 
 	function execute(connection) {
-		var scheme = getScheme(connection);
-		if (!scheme.execute) {
-			scheme.execute = RSVP.defer();
-			new RSVP.Queue()
-				.push(function () {
+		var execution_scheme = getExecutionScheme(connection),
+			scheme;
+		if (!execution_scheme.execute) {
+			execution_scheme.execute = RSVP.defer();
+			getScheme(connection)
+				.push(function (s) {
 					var settings = getProperties(connection),
 						prop = settings.prop,
-						hierarchies = scheme.hierarchies,
+						hierarchies = execution_scheme.hierarchies,
 						hierarchy,
-						mdx = [];
+						mdx = [],
+						tuple_str,
+						all_member;
+					scheme = s;
 					for (hierarchy in hierarchies) {
-						mdx.push("{" + hierarchies[hierarchy].join(",") + "}");
+						tuple_str = hierarchies[hierarchy].join(",");
+						all_member = scheme.hierarchies[hierarchy].all_member;
+						if (all_member) {
+							tuple_str = tuple_str + ',' + all_member;
+						}
+						mdx.push("{" + tuple_str + "}");
 					}
 					prop.statement = "SELECT " + mdx.join("*") +
 						" ON 0 FROM [" + settings.cube + "]";
@@ -251,6 +339,7 @@
 							axes: {length: axis_count},
 							members: {},
 							hierarchies: {length: 0},
+							hierarchies_info: scheme.hierarchies,
 							cells: []
 						};
 
@@ -312,42 +401,63 @@
 						cube.cells[cellset.cellOrdinal()] = cellset.cellValue();
 					} while (cellset.nextCell() > 0);
 					collectAxes();
-					scheme.cube = cube;
-					scheme.execute.resolve(cube);
-					scheme.execute = null;
-					scheme.hierarchies = [];
+					execution_scheme.cube = cube;
+					execution_scheme.execute.resolve(cube);
+					execution_scheme.execute = null;
+					execution_scheme.hierarchies = [];
 				})
 				.push(undefined, function (error) {
 					console.error(error);
-					scheme.execute = null;
-					scheme.hierarchies = [];
+					execution_scheme.execute = null;
+					execution_scheme.hierarchies = [];
 				});
 		}
-		return scheme.execute.promise;
+		return execution_scheme.execute.promise;
 	}
 
-	function discover_members(connection, members) {
-		var promises = [],
-			hierarchies = {},
-			scheme = getScheme(connection);
-
-		function discoverMember(connection, member_name) {
-			var settings = getProperties(connection),
-				prop = settings.prop;
-			prop.restrictions = {
+	function discover_member(connection, member_name) {
+		var settings = getProperties(connection),
+			prop = settings.prop,
+			cached_member,
+			scheme = getExecutionScheme(connection);
+		prop.restrictions = {
 //      'CATALOG_NAME': 'FoodMart',
-				'MEMBER_UNIQUE_NAME': member_name,
-				'CUBE_NAME': settings.cube
-			};
+			'MEMBER_UNIQUE_NAME': member_name,
+			'CUBE_NAME': settings.cube
+		};
+		cached_member = scheme.members[member_name];
+		if (cached_member) {
+			return new RSVP.Queue()
+				.push(function () {
+					return cached_member;
+				});
+		} else {
 			return xmla_request_retry("discoverMDMembers", prop)
-				.push(function (response) {
-					if (response.numRows > 0) {
-						return response;
+				.push(function (r) {
+					if (r.numRows > 0) {
+						var uname = r.getMemberUniqueName(),
+							hierarchy = r.getHierarchyUniqueName(),
+							cached_member;
+						cached_member = {
+							uname: uname,
+							h: hierarchy,
+							caption: r.getMemberCaption(),
+							type: r.getMemberType()
+						};
+						if (!scheme.members.hasOwnProperty(uname)) {
+							scheme.members[uname] = cached_member;
+						}
+						return cached_member;
 					} else {
 						throw "member not found";
 					}
 				});
 		}
+	}
+
+	function discover_members(connection, members) {
+		var promises = [],
+			hierarchies = {};
 
 		function check_interseption(hierarchy) {
 			if (hierarchies.hasOwnProperty(hierarchy)) {
@@ -358,31 +468,15 @@
 		}
 
 		members.forEach(function (member) {
-			var cached_member;
 			if (member) {
-				cached_member = scheme.members[member];
-				if (cached_member) {
-					check_interseption(cached_member.h);
-					promises.push(cached_member);
-				} else {
-					promises
-						.push(discoverMember(connection, member)
-							.push(function (r) {
-								var uname = r.getMemberUniqueName(),
-									hierarchy = r.getHierarchyUniqueName(),
-									cached_member;
-								check_interseption(hierarchy);
-								cached_member = {
-									uname: uname,
-									h: hierarchy,
-									caption: r.getMemberCaption()
-								};
-								if (!scheme.members.hasOwnProperty(uname)) {
-									scheme.members[uname] = cached_member;
-								}
-								return cached_member;
-							}));
-				}
+				promises
+					.push(
+						discover_member(connection, member)
+							.push(function (member) {
+								check_interseption(member.h);
+								return member;
+							})
+					);
 			}
 		});
 		return RSVP.all(promises);
@@ -546,7 +640,7 @@
 		return queue
 			.push(function (arg) {
 				connection = getCell(arg[0]);
-				scheme = getScheme(connection);
+				scheme = getExecutionScheme(connection);
 				return parseArgs(arg.slice(1))();
 			})
 			.push(function (members) {
@@ -585,13 +679,9 @@
 					coordinate = [],
 					i,
 					ret;
-				for (i = 0; i < cube.hierarchies.length; i++) {
-					h = cube.hierarchies[i];
-					coordinate[h.axis_id] = [];
-					coordinate[h.axis_id][h.tuple_id] = null;
-				}
-				for (i = 0; i < members.length; i++) {
-					member_path = members[i];
+
+				function getHierarchyByMember(member_path) {
+					var h;
 					h = cube.members[member_path];
 					if (h === undefined) {
 						throw "query result not contain data for member:" +
@@ -599,17 +689,40 @@
 					}
 					h = h.hierarchy;
 					h = cube.hierarchies[h];
+					return h;
+				}
+
+				for (i = 0; i < cube.hierarchies.length; i++) {
+					h = cube.hierarchies[i];
+					if (!coordinate[h.axis_id]) {
+						coordinate[h.axis_id]	= [];
+					}
+					coordinate[h.axis_id][h.tuple_id] = null;
+				}
+				for (i = 0; i < members.length; i++) {
+					member_path = members[i];
+					h = getHierarchyByMember(members[i]);
 					coordinate[h.axis_id][h.tuple_id] = member_path;
 				}
 				coordinate = coordinate.map(function (axis, axis_id) {
-					axis.forEach(function (h, h_id) {
-						if (h === null) {
+					return axis.map(function (h, h_id) {
+						var hierarchy_name,
+							all_member;
+						if (!h) {
+							hierarchy_name = cube.hierarchies[axis_id + ',' + h_id].name;
+							all_member = cube.hierarchies_info[hierarchy_name].all_member;
+							if (all_member) {
+								h = getHierarchyByMember(all_member);
+								if (h) {
+									return all_member;
+								}
+							}
 							throw "Axis:" + axis_id + " hierarchy:" +
 							cube.hierarchies[axis_id + ',' + h_id].name +
 							" not determinated";
 						}
-					});
-					return axis.join(',');
+						return h;
+					}).join(',');
 				});
 				coordinate.forEach(function (tuple, axis_id) {
 					var axis = cube.axes[axis_id];
