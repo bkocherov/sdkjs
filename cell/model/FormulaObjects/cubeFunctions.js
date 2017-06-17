@@ -332,9 +332,8 @@
 				.push(function (dataset) {
 					var cellset = dataset.getCellset(),
 						axis_count = dataset.axisCount(),
-						cell_id = 0,
+						axis_array = [],
 						axis_id,
-						axis,
 						cube = {
 							axes: {length: axis_count},
 							members: {},
@@ -344,33 +343,11 @@
 						};
 
 
-					function collectAxes(axisIndex, parent_members) {
-						var member;
-						if (typeof(axisIndex) === "undefined") {
-							axisIndex = axis_count - 1;
-							parent_members = [];
-						}
-						axis = dataset.getAxis(axisIndex);
-
-						axis.eachTuple(function (tuple) {
-							var coordinate_tuple = [];
-							this.eachHierarchy(function (hierarchy) {
-								member = this.member();
-								coordinate_tuple.push(member.UName);
-							});
-
-							if (axisIndex) {
-								collectAxes(axisIndex - 1, parent_members.concat(coordinate_tuple));
-							} else {
-								console.log(parent_members.concat(coordinate_tuple) + ' - ' + cube.cells[cell_id]);
-								cell_id++;
-							}
-						});
-						axis.reset();
+					for (axis_id = 0; axis_id < axis_count; axis_id++) {
+						axis_array.push(dataset.getAxis(axis_id));
 					}
 
-					for (axis_id = 0; axis_id < axis_count; axis_id++) {
-						axis = dataset.getAxis(axis_id);
+					axis_array.forEach(function (axis, axis_id) {
 						cube.axes[axis_id] = {
 							tuples: {},
 							length: 0
@@ -395,12 +372,11 @@
 							cube.hierarchies['' + axis_id + ',' + hierarchy.index] = cube.hierarchies[hierarchy.name];
 							cube.hierarchies.length++;
 						});
-					}
+					});
 
 					do {
 						cube.cells[cellset.cellOrdinal()] = cellset.cellValue();
 					} while (cellset.nextCell() > 0);
-					collectAxes();
 					execution_scheme.cube = cube;
 					execution_scheme.execute.resolve(cube);
 					execution_scheme.execute = null;
@@ -695,7 +671,7 @@
 				for (i = 0; i < cube.hierarchies.length; i++) {
 					h = cube.hierarchies[i];
 					if (!coordinate[h.axis_id]) {
-						coordinate[h.axis_id]	= [];
+						coordinate[h.axis_id] = [];
 					}
 					coordinate[h.axis_id][h.tuple_id] = null;
 				}
