@@ -171,6 +171,16 @@
 					}
 				},
 				cube: "Sales"
+			},
+			olapy: {
+				prop: {
+					url: "https://d1.erp5.ru/olapy/xmla",
+					properties: {
+						DataSourceInfo: "-",
+						Catalog: "sales"
+					}
+				},
+				cube: "Sales"
 			}
 		};
 		connection = connections[connection];
