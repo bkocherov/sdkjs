@@ -677,10 +677,8 @@ parserHelp.setDigitSeparator(AscCommon.g_oDefaultCultureInfo.NumberDecimalSepara
 		    if (typeof element === "function") {
 			    promise_flag = true;
 		    }
-		    if (element instanceof cArea || element instanceof cArea3D) {
-		    	element.foreach(cellForge);
-		    }
-		    if (element instanceof cRef || element instanceof cRef3D) {
+		    if (element instanceof cArea || element instanceof cArea3D ||
+			    element instanceof cRef || element instanceof cRef3D) {
 			    element.getRange().getCells().forEach(cellForge);
 		    }
 	    }
