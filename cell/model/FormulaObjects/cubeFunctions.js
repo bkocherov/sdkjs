@@ -276,9 +276,8 @@
 			}
 
 			mdx_array.forEach(function (element) {
-				if (element instanceof cArea || element instanceof cArea3D) {
-					element.foreach(cellForge);
-				} else if (element instanceof cRef || element instanceof cRef3D) {
+				if (element instanceof cArea || element instanceof cArea3D ||
+					element instanceof cRef || element instanceof cRef3D) {
 					element.getRange().getCells().forEach(cellForge);
 				} else {
 					stringForge(element);
