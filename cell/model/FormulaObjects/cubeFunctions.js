@@ -37,7 +37,7 @@
  * @param {Window} window
  * @param {undefined} undefined
  */
-	function (window, console, undefined) {
+	function (window, console, Xmla, undefined) {
 	var cBaseFunction = AscCommonExcel.cBaseFunction;
 	var cFormulaFunctionGroup = AscCommonExcel.cFormulaFunctionGroup,
 		cElementType = AscCommonExcel.cElementType,
@@ -212,6 +212,7 @@
 					cubeScheme[connection] = scheme;
 					return scheme;
 				});
+			cubeScheme[connection] = queue;
 		}
 		return queue;
 	}
@@ -223,7 +224,8 @@
 		} else {
 			scheme = {
 				members: {},
-				hierarchies: {}
+				hierarchies: {},
+				levels: {}
 			};
 			cubeExecutionScheme[connection] = scheme;
 			return scheme;
@@ -400,47 +402,88 @@
 		return execution_scheme.execute.promise;
 	}
 
-	function discover_member(connection, member_name) {
-		var settings = getProperties(connection),
-			prop = settings.prop,
-			cached_member,
-			scheme = getExecutionScheme(connection);
-		prop.restrictions = {
+	function discover_members(connection, opt) {
+		return new RSVP.Queue()
+			.push(function () {
+				var settings = getProperties(connection),
+					prop = settings.prop,
+					cached_member,
+					scheme = getExecutionScheme(connection);
+				prop.restrictions = {
 //      'CATALOG_NAME': 'FoodMart',
-			'MEMBER_UNIQUE_NAME': member_name,
-			'CUBE_NAME': settings.cube
-		};
-		cached_member = scheme.members[member_name];
-		if (cached_member) {
-			return new RSVP.Queue()
-				.push(function () {
-					return cached_member;
-				});
-		} else {
-			return xmla_request_retry("discoverMDMembers", prop)
-				.push(function (r) {
-					if (r.numRows > 0) {
-						var uname = r.getMemberUniqueName(),
-							hierarchy = r.getHierarchyUniqueName(),
-							cached_member;
-						cached_member = {
-							uname: uname,
-							h: hierarchy,
-							caption: r.getMemberCaption(),
-							type: r.getMemberType()
-						};
-						if (!scheme.members.hasOwnProperty(uname)) {
-							scheme.members[uname] = cached_member;
-						}
-						return cached_member;
-					} else {
-						throw "member not found";
-					}
-				});
-		}
+					'CUBE_NAME': settings.cube
+				};
+				if (!opt) {
+					opt = {};
+				}
+				if (opt.member_uname) {
+					prop.restrictions.MEMBER_UNIQUE_NAME = opt.member_uname;
+					cached_member = scheme.members[opt.member_uname];
+				}
+				if (opt.level_uname) {
+					prop.restrictions.LEVEL_UNIQUE_NAME = opt.level_uname;
+				}
+				if (cached_member) {
+					return [cached_member];
+				} else {
+					return xmla_request_retry("discoverMDMembers", prop)
+						.push(function (r) {
+							var ret = [],
+								uname,
+								level,
+								cached_member;
+							while (r.hasMoreRows()) {
+								uname = r.getMemberUniqueName();
+								level = r.getLevelUniqueName();
+								// we can check cache twice because fist check
+								// only if discover by member_uname
+								if (!scheme.members.hasOwnProperty(uname)) {
+									cached_member = {
+										uname: uname,
+										h: r.getHierarchyUniqueName(),
+										level: r.getLevelUniqueName(),
+										caption: r.getMemberCaption(),
+										type: r.getMemberType()
+									};
+									scheme.members[uname] = cached_member;
+								} else {
+									cached_member = scheme.members[uname];
+								}
+								ret.push(cached_member);
+								r.nextRow();
+								if (!scheme.levels.hasOwnProperty(level)) {
+									scheme.levels[level] = discover_level(connection, scheme, level);
+								}
+							}
+							return ret;
+						});
+				}
+			});
 	}
 
-	function discover_members(connection, members) {
+	function discover_level(connection, scheme, level) {
+		return discover_members(connection, {
+			level_uname: level
+		})
+			.push(function (members) {
+				var i;
+				function compare(a,b) {
+					if (a.uname < b.uname)
+						return -1;
+					if (a.uname > b.uname)
+						return 1;
+					return 0;
+				}
+
+				members.sort(compare);
+				for (i = 0; i < members.length; i++) {
+					members[i].level_index = i;
+				}
+				scheme.levels[level] = members;
+			});
+	}
+
+	function discover_members_for_arguments(connection, members) {
 		var promises = [],
 			hierarchies = {};
 
@@ -456,10 +499,18 @@
 			if (member) {
 				promises
 					.push(
-						discover_member(connection, member)
-							.push(function (member) {
-								check_interseption(member.h);
-								return member;
+						discover_members(connection, {
+							member_uname: member
+						})
+							.push(function (members) {
+								var member;
+								if (members.length > 0) {
+									member = members[0];
+									check_interseption(member.h);
+									return member;
+								} else {
+									throw "member not found";
+								}
 							})
 					);
 			}
@@ -525,7 +576,7 @@
 				return parseArgs([arg[1]])();
 			})
 			.push(function (members) {
-				return discover_members(connection, members);
+				return discover_members_for_arguments(connection, members);
 			})
 			.push(function (members) {
 				var last_id = members.length - 1,
@@ -542,6 +593,30 @@
 				return ret;
 			})
 			.push(undefined, error_handler(current_cell_id));
+	};
+	cCUBEMEMBER.prototype.changeOffsetElem = function (arg, offset) {
+		var connection = getCell(arg[0]),
+			scheme = getExecutionScheme(connection),
+			i,
+			elem,
+			member,
+			new_member,
+			level;
+		for (i = 0; i < arg.length; i++) {
+			elem = arg[i];
+			if (cElementType.string === elem.type) {
+				member = scheme.members[elem.value];
+				if (member && (member.level_index >= 0)) {
+					level = scheme.levels[member.level];
+					new_member = level[member.level_index + offset.offsetCol + offset.offsetRow];
+					if (new_member) {
+						elem.value = new_member.uname;
+					} else {
+						elem.value = "";
+					}
+				}
+			}
+		}
 	};
 	cCUBEMEMBER.prototype.getInfo = function () {
 		return {
@@ -629,7 +704,7 @@
 				return parseArgs(arg.slice(1))();
 			})
 			.push(function (members) {
-				return discover_members(connection, members);
+				return discover_members_for_arguments(connection, members);
 			})
 			.push(function (m) {
 				var member_uname,
@@ -729,10 +804,11 @@
 					});
 			});
 	};
+	cCUBEVALUE.prototype.changeOffsetElem = cCUBEMEMBER.prototype.changeOffsetElem;
 	cCUBEVALUE.prototype.getInfo = function () {
 		return {
 			name: this.name, args: "( connection, member1, member2, .. )"
 		};
 	};
 })
-(window, console);
+(window, console, Xmla);
