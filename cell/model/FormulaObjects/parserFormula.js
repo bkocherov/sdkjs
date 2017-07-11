@@ -657,6 +657,10 @@ parserHelp.setDigitSeparator(AscCommon.g_oDefaultCultureInfo.NumberDecimalSepara
 		this.value = val;
 	}
 
+	cBaseType.prototype.clone = function () {
+		return new this.constructor(this.value);
+	};
+
 	cBaseType.prototype.cloneTo = function (oRes) {
 		oRes.numFormat = this.numFormat;
 		oRes.value = this.value;
