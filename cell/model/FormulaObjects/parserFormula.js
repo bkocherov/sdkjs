@@ -5542,8 +5542,39 @@ parserFormula.prototype.setFormula = function(formula) {
 
 	/* Для обратной сборки функции иногда необходимо поменять ссылки на ячейки */
 	parserFormula.prototype.changeOffset = function (offset, canResize) {//offset = AscCommonExcel.CRangeOffset
+		var elemArr = [], currentElement = null, arg,
+			disable_changeOffset_run = false;
 		for (var i = 0; i < this.outStack.length; i++) {
-			this.changeOffsetElem(this.outStack[i], this.outStack, i, offset, canResize);
+			currentElement = this.outStack[i];
+			this.changeOffsetElem(currentElement, this.outStack, i, offset, canResize);
+			if (disable_changeOffset_run) {
+				continue;
+			}
+			if (currentElement.name == "(") {
+				continue;
+			}
+			if (currentElement.type === cElementType.operator || currentElement.type === cElementType.func) {
+				if (elemArr.length < currentElement.getArguments()) {
+					disable_changeOffset_run = true;
+					continue;
+				} else {
+					if (currentElement && currentElement.changeOffsetElem) {
+						arg = [];
+						for (var ind = 0; ind < currentElement.getArguments(); ind++) {
+							arg.unshift(elemArr.pop());
+						}
+						currentElement.changeOffsetElem(arg, offset);
+					}
+					// calculation not work on changeOffset stage
+					elemArr.push(new cEmpty());
+				}
+			} else if (currentElement.type === cElementType.name || currentElement.type === cElementType.name3D) {
+				elemArr.push(currentElement.Calculate(null, rangeCell));
+			} else if (currentElement.type === cElementType.table) {
+				elemArr.push(currentElement.toRef(rangeCell.getBBox0()));
+			} else {
+				elemArr.push(currentElement);
+			}
 		}
 		return this;
 	};
