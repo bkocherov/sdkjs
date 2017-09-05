@@ -1,0 +1,19 @@
+{
+  "name": "erp5_officejs_onlyoffice_sdkjs",
+  "description": "sdkjs - core of OnlyOffice project.",
+  "authors": [
+    "Ascensio System SIA 2017"
+  ],
+  "license": "GNU AGPL v3.0",
+  "scopes": [
+    {
+      "prefix": "onlyoffice/sdkjs/",
+      "paths": [
+        "common/",
+        "cell/",
+        "word/",
+        "slide/"
+      ]
+    }
+  ]
+}
