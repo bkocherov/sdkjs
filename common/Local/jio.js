@@ -347,7 +347,7 @@ AscCommon.loadSdk = function (sdkName, callback) {
           "../cell/graphics/pdfprinter.js",
           "../cell/model/ConditionalFormatting.js",
           "../cell/model/FormulaObjects/parserFormula.js",
-          "../cell/model/FormulaObjects/_xlfnFunctions.js",
+          "../cell/model/FormulaObjects/xlfnFunctions.js",
           "../cell/model/FormulaObjects/dateandtimeFunctions.js",
           "../cell/model/FormulaObjects/engineeringFunctions.js",
           "../cell/model/FormulaObjects/cubeFunctions.js",
