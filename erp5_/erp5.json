@@ -13,6 +13,14 @@
         "cell/",
         "word/",
         "slide/"
+      ],
+      "excluded_paths": [
+        "common/FontsFreeType/Private/",
+        "cell/model/FormulaObjects/PegJs/",
+        "cell/model/FormulaObjects/Ebnf-Visualizer/",
+        "cell/document/",
+        "word/document/",
+        "slide/document/"
       ]
     }
   ]
