@@ -19,7 +19,7 @@
         "cell/model/FormulaObjects/PegJs/",
         "cell/model/FormulaObjects/Ebnf-Visualizer/",
         "cell/document/",
-        "word/document/",
+        "word/document/editor.js",
         "slide/document/"
       ]
     }
