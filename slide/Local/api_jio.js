@@ -1,5 +1,5 @@
 /*
- * (c) Copyright Ascensio System SIA 2010-2016
+ * (c) Copyright Ascensio System SIA 2010-2017
  *
  * This program is a free software product. You can redistribute it and/or
  * modify it under the terms of the GNU Affero General Public License (AGPL)
@@ -42,6 +42,8 @@ Asc['asc_docs_api'].prototype._OfflineAppDocumentStartLoad = function()
 {
 	this.asc_registerCallback('asc_onDocumentContentReady', function(){
 		DesktopOfflineUpdateLocalName(editor);
+
+		//setTimeout(function(){window["UpdateInstallPlugins"]();}, 10);
 	});
 
 	AscCommon.History.UserSaveMode = true;
@@ -52,7 +54,7 @@ Asc['asc_docs_api'].prototype._OfflineAppDocumentEndLoad = function(_url, _data)
 	//AscCommon.g_oIdCounter.m_sUserId = window["AscDesktopEditor"]["CheckUserId"]();
 	if (_data == "")
 	{
-		this.sendEvent("asc_onError", c_oAscError.ID.ConvertationError, c_oAscError.Level.Critical);
+		this.sendEvent("asc_onError", c_oAscError.ID.ConvertationOpenError, c_oAscError.Level.Critical);
 		return;
 	}
 	
@@ -79,9 +81,9 @@ window["DesktopOfflineAppDocumentEndLoad"] = function(_url, _data)
 /////////////////////////////////////////////////////////
 AscCommon.CHistory.prototype.Reset_SavedIndex = function(IsUserSave)
 {
+	this.SavedIndex = (null === this.SavedIndex && -1 === this.Index ? null : this.Index);
 	if (true === this.Is_UserSaveMode())
 	{
-		this.SavedIndex = this.Index;
 		if (true === IsUserSave)
 		{
 			this.UserSavedIndex = this.Index;
@@ -90,7 +92,6 @@ AscCommon.CHistory.prototype.Reset_SavedIndex = function(IsUserSave)
 	}
 	else
 	{
-		this.SavedIndex = this.Index;
 		this.ForceSave  = false;
 	}
 };
@@ -140,7 +141,7 @@ window["DesktopOfflineAppDocumentApplyChanges"] = function(_changes)
 Asc['asc_docs_api'].prototype.SetDocumentModified = function(bValue)
 {
     this.isDocumentModify = bValue;
-    this.asc_fireCallback("asc_onDocumentModifiedChanged");
+    this.sendEvent("asc_onDocumentModifiedChanged");
 
     if (undefined !== window["AscDesktopEditor"])
     {
@@ -172,7 +173,7 @@ window["DesktopOfflineAppDocumentEndSave"] = function(error)
 	editor.LastUserSavedIndex = undefined;
 	
 	if (2 == error)
-		editor.sendEvent("asc_onError", c_oAscError.ID.ConvertationError, c_oAscError.Level.Critical);
+		editor.sendEvent("asc_onError", c_oAscError.ID.ConvertationSaveError, c_oAscError.Level.Critical);
 };
 Asc['asc_docs_api'].prototype.asc_DownloadAs = function(typeFile, bIsDownloadEvent) 
 {
