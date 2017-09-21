@@ -1,5 +1,5 @@
 /*
- * (c) Copyright Ascensio System SIA 2010-2016
+ * (c) Copyright Ascensio System SIA 2010-2017
  *
  * This program is a free software product. You can redistribute it and/or
  * modify it under the terms of the GNU Affero General Public License (AGPL)
@@ -53,7 +53,10 @@ var c_oAscError = Asc.c_oAscError;
 	{
 		this.asc_registerCallback('asc_onDocumentContentReady', function(){
 			DesktopOfflineUpdateLocalName(window["Asc"]["editor"]);
+
+			//setTimeout(function(){window["UpdateInstallPlugins"]();}, 10);
 		});
+
 		this.jio_open();
 	};
 	
@@ -62,7 +65,7 @@ var c_oAscError = Asc.c_oAscError;
 		//AscCommon.g_oIdCounter.m_sUserId = window["AscDesktopEditor"]["CheckUserId"]();
 		if (_data == "")
 		{
-			this.sendEvent("asc_onError", c_oAscError.ID.ConvertationError, c_oAscError.Level.Critical);
+			this.sendEvent("asc_onError", c_oAscError.ID.ConvertationOpenError, c_oAscError.Level.Critical);
 			return;
 		}
 
@@ -71,27 +74,39 @@ var c_oAscError = Asc.c_oAscError;
 
 		DesktopOfflineUpdateLocalName(this);
 		
-		this.onUpdateDocumentModified(AscCommon.History.Is_Modified());
+		this.onUpdateDocumentModified(AscCommon.History.Have_Changes());
 	};
 	
-	asc['spreadsheet_api'].prototype._onNeedParams = function(data) 
+	asc['spreadsheet_api'].prototype._onNeedParams = function(data, opt_isPassword)
 	{
-		var cp = JSON.parse("{\"codepage\":46,\"delimiter\":1}");
-		cp['encodings'] = AscCommon.getEncodingParams();
-		this.handlers.trigger("asc_onAdvancedOptions", new AscCommon.asc_CAdvancedOptions(Asc.c_oAscAdvancedOptionsID.CSV, cp), AscCommon.c_oAscAdvancedOptionsAction.Open);
+		var options;
+		if(opt_isPassword){
+			options = new AscCommon.asc_CAdvancedOptions(Asc.c_oAscAdvancedOptionsID.DRM);
+		} else {
+			var cp = JSON.parse("{\"codepage\":46,\"delimiter\":1}");
+			cp['encodings'] = AscCommon.getEncodingParams();
+			options = new AscCommon.asc_CAdvancedOptions(Asc.c_oAscAdvancedOptionsID.CSV, cp);
+		}
+		this.handlers.trigger("asc_onAdvancedOptions", options, AscCommon.c_oAscAdvancedOptionsAction.Open);
 	};
 })(jQuery, window);
 
 window["Asc"]['spreadsheet_api'].prototype.asc_setAdvancedOptions = function(idOption, option) 
 {
-	window["AscDesktopEditor"]["SetAdvancedOptions"]("" + option.asc_getCodePage(), "" + option.asc_getDelimiter());
+	if (window["Asc"].c_oAscAdvancedOptionsID.CSV === idOption) {
+        var _param = "";
+	    _param += ("<m_nCsvTxtEncoding>" + option.asc_getCodePage() + "</m_nCsvTxtEncoding>");
+	    _param += ("<m_nCsvDelimiter>" + option.asc_getDelimiter() + "</m_nCsvDelimiter>");
+
+		window["AscDesktopEditor"]["SetAdvancedOptions"](_param);
+	}
+	else if (window["Asc"].c_oAscAdvancedOptionsID.DRM === idOption) {
+        var _param = "";
+        _param += ("<m_sPassword>" + AscCommon.CopyPasteCorrectString(option.asc_getPassword()) + "</m_sPassword>");
+        window["AscDesktopEditor"]["SetAdvancedOptions"](_param);
+    }
 };
 window["Asc"]['spreadsheet_api'].prototype["asc_setAdvancedOptions"] = window["Asc"]['spreadsheet_api'].prototype.asc_setAdvancedOptions;
-
-window["asc_initAdvancedOptions"] = function()
-{	
-	window["Asc"]["editor"]._onNeedParams(undefined);
-};
 
 window["DesktopOfflineAppDocumentEndLoad"] = function(_url, _data)
 {
@@ -111,9 +126,9 @@ window["DesktopOfflineAppDocumentEndLoad"] = function(_url, _data)
 /////////////////////////////////////////////////////////
 AscCommon.CHistory.prototype.Reset_SavedIndex = function(IsUserSave)
 {
+	this.SavedIndex = (null === this.SavedIndex && -1 === this.Index ? null : this.Index);
 	if (true === this.Is_UserSaveMode())
 	{
-		this.SavedIndex = this.Index;
 		if (true === IsUserSave)
 		{
 			this.UserSavedIndex = this.Index;
@@ -122,12 +137,11 @@ AscCommon.CHistory.prototype.Reset_SavedIndex = function(IsUserSave)
 	}
 	else
 	{
-		this.SavedIndex = this.Index;
 		this.ForceSave  = false;
 	}
 };
 
-AscCommon.CHistory.prototype.Is_Modified = function(IsNotUserSave, IsNoSavedNoModifyed) 
+AscCommon.CHistory.prototype.Have_Changes = function(IsNotUserSave, IsNoSavedNoModifyed)
 {
 	var checkIndex = (this.Is_UserSaveMode() && !IsNotUserSave) ? this.UserSavedIndex : this.SavedIndex;
 	if (-1 === this.Index && null === checkIndex && false === this.ForceSave) 
@@ -155,7 +169,6 @@ window["DesktopOfflineAppDocumentApplyChanges"] = function(_changes)
 /////////////////////////////////////////////////////////
 ////////////////        SAVE       //////////////////////
 /////////////////////////////////////////////////////////
-
 window["Asc"]['spreadsheet_api'].prototype.asc_DownloadAs = function(typeFile, bIsDownloadEvent)
 {
 	this.asc_Save(false, true);
@@ -186,11 +199,11 @@ window["DesktopOfflineAppDocumentEndSave"] = function(error)
 	else
 		AscCommon.History.UserSavedIndex = window["Asc"]["editor"].LastUserSavedIndex;		
 	
-	window["Asc"]["editor"].onUpdateDocumentModified(AscCommon.History.Is_Modified());
+	window["Asc"]["editor"].onUpdateDocumentModified(AscCommon.History.Have_Changes());
 	window["Asc"]["editor"].LastUserSavedIndex = undefined;
 	
 	if (2 == error)
-		window["Asc"]["editor"].sendEvent("asc_onError", c_oAscError.ID.ConvertationError, c_oAscError.Level.NoCritical);
+		window["Asc"]["editor"].sendEvent("asc_onError", c_oAscError.ID.ConvertationSaveError, c_oAscError.Level.NoCritical);
 };
 
 window["Asc"]['spreadsheet_api'].prototype["asc_addImageDrawingObject"] = window["Asc"]['spreadsheet_api'].prototype.asc_addImageDrawingObject;
