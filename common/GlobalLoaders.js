@@ -483,6 +483,10 @@
                           oThis.Api.asyncImagesDocumentEndLoaded();
                       else
                           oThis.ThemeLoader.asyncImagesEndLoaded();
+                  })
+                  .then(undefined, function (error) {
+                      console.log(error);
+                      throw error;
                   });
             } else {
                 for (var id in _images) {
