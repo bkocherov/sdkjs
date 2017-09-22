@@ -5,6 +5,9 @@
     "Ascensio System SIA 2017"
   ],
   "license": "GNU AGPL v3.0",
+  "dependencies": [
+    "erp5_officejs_onlyoffice_fonts"
+  ],
   "scopes": [
     {
       "prefix": "onlyoffice/sdkjs/",
