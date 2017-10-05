@@ -5412,7 +5412,7 @@
 	}
 
 	Cell.prototype.getId = function () {
-		return [this.ws.getId(), this.nRow, this.nCol].join(",");
+		return [this.ws.getId(), this.getName()].join(",");
 	};
 
 	Cell.prototype.getStyle=function(){
