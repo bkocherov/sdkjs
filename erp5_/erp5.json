@@ -12,6 +12,7 @@
     {
       "prefix": "onlyoffice/sdkjs/",
       "paths": [
+        "build/configs/",
         "common/",
         "cell/",
         "word/",
