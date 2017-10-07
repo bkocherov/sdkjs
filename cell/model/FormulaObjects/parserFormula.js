@@ -700,7 +700,7 @@ parserHelp.setDigitSeparator(AscCommon.g_oDefaultCultureInfo.NumberDecimalSepara
 		    }
 		    if (element instanceof cArea || element instanceof cArea3D ||
 			    element instanceof cRef || element instanceof cRef3D) {
-			    element.getRange().getCells().forEach(cellForge);
+			    element.getRange()._foreach(cellForge);
 		    }
 	    }
 	    return promise_flag;
@@ -5286,7 +5286,10 @@ parserFormula.prototype.parse = function(local, digitDelim) {
 						formula.value = ret;
 						formula.value.numFormat = numFormat;
 						formula._endCalculate();
-						opt_bbox.updateOnScreen();
+            // updateOnScreen cell
+            formula.ws.workbook.handlers.trigger("cleanCellCache",
+              formula.ws.getId(), {0: opt_bbox},
+              AscCommonExcel.c_oAscCanChangeColWidth.none);
 						formula.queue = false;
 						// formula.lazy_value = null;
 						return formula.value;

@@ -284,7 +284,7 @@
 			mdx_array.forEach(function (element) {
 				if (element instanceof cArea || element instanceof cArea3D ||
 					element instanceof cRef || element instanceof cRef3D) {
-					element.getRange().getCells().forEach(cellForge);
+					element.getRange()._foreach(cellForge);
 				} else {
 					stringForge(element);
 				}
@@ -566,9 +566,9 @@
 	cCUBEMEMBER.prototype.constructor = cCUBEMEMBER;
 	cCUBEMEMBER.prototype.argumentsMin = 2;
 	cCUBEMEMBER.prototype.argumentsMax = 3;
-	cCUBEMEMBER.prototype.CalculateLazy = function (queue, range) {
+	cCUBEMEMBER.prototype.CalculateLazy = function (queue, bbox, isDefName, ws) {
 		var connection,
-			current_cell_id = range.getCells()[0].getId(),
+			current_cell_id = ws._getCell(bbox.r1, bbox.c2).getId(),
 			caption;
 		return queue
 			.push(function (arg) {
@@ -695,11 +695,11 @@
 	cCUBEVALUE.prototype.constructor = cCUBEVALUE;
 	cCUBEVALUE.prototype.argumentsMin = 2;
 	cCUBEVALUE.prototype.argumentsMax = 5;
-	cCUBEVALUE.prototype.CalculateLazy = function (queue, range) {
+	cCUBEVALUE.prototype.CalculateLazy = function (queue, bbox, isDefName, ws) {
 		var scheme,
 			connection,
 			members = [],
-			current_cell_id = range.getCells()[0].getId(),
+      current_cell_id = ws._getCell(bbox.r1, bbox.c2).getId(),
 			waiter = AddCubeValueCalculate(current_cell_id);
 		return queue
 			.push(function (arg) {
