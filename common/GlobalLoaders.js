@@ -465,8 +465,8 @@
                 this.Api.asyncImagesDocumentStartLoaded();
             else
                 this.ThemeLoader.asyncImagesStartLoaded();
-            if (!this.bIsAsyncLoadDocumentImages) {
-                this.nNoByOrderCounter = 0;
+			// Always load images as foreground
+            if (true || !this.bIsAsyncLoadDocumentImages) {
                 for (id in _images) {
                     images.push(AscCommon.getFullImageSrc2(_images[id]));
                 }
@@ -531,13 +531,11 @@
                     oThis.map_image_index[image_id] = oImage;
                     oImage.Image.onload = function () {
                         oImage.Status = ImageLoadStatus.Complete;
-                        oThis.nNoByOrderCounter++;
                         resolve(oImage);
                     };
                     oImage.Image.onerror = function () {
                         oImage.Status = ImageLoadStatus.Complete;
                         oImage.Image = null;
-                        oThis.nNoByOrderCounter++;
                         resolve(oImage);
                     };
                     //oImage.Image.crossOrigin = 'anonymous';
