@@ -123,9 +123,9 @@ AscCommon.loadSdk = function (sdkName, callback) {
         });
       })
       .push(function (response) {
-        var queue = new RSVP.Queue();
-        response.target.response
-          .compile.sdk.common.forEach(function (url) {
+        var queue = new RSVP.Queue(),
+          sdk = response.target.response.compile.sdk;
+        sdk.common.concat(sdk.private).forEach(function (url) {
           url = url.replace('../', './sdkjs/');
           queue.push(function () {
             return loadScript(url);
