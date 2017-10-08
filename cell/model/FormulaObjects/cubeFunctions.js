@@ -534,7 +534,6 @@
 			} else {
 				ret = new cError(cErrorType.not_available);
 			}
-			ret.ca = true;
 			return ret;
 		};
 	}
@@ -566,6 +565,7 @@
 	cCUBEMEMBER.prototype.constructor = cCUBEMEMBER;
 	cCUBEMEMBER.prototype.argumentsMin = 2;
 	cCUBEMEMBER.prototype.argumentsMax = 3;
+	cCUBEMEMBER.prototype.ca = true;
 	cCUBEMEMBER.prototype.CalculateLazy = function (queue, bbox, isDefName, ws) {
 		var connection,
 			current_cell_id = ws._getCell(bbox.r1, bbox.c2).getId(),
@@ -589,7 +589,6 @@
 					caption = members[last_id].caption;
 				}
 				ret = new cString(caption);
-				ret.ca = true;
 				ret.cube_value = [];
 				members.forEach(function (member) {
 					ret.cube_value.push(member.uname);
@@ -695,6 +694,7 @@
 	cCUBEVALUE.prototype.constructor = cCUBEVALUE;
 	cCUBEVALUE.prototype.argumentsMin = 2;
 	cCUBEVALUE.prototype.argumentsMax = 5;
+  cCUBEVALUE.prototype.ca = true;
 	cCUBEVALUE.prototype.CalculateLazy = function (queue, bbox, isDefName, ws) {
 		var scheme,
 			connection,
@@ -794,7 +794,6 @@
 					p_d = p_d * axis.length;
 				});
 				ret = new cNumber(cube.cells[cell_id]);
-				ret.ca = true;
 				return ret;
 			})
 			.push(undefined, function (error) {
