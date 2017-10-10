@@ -6,6 +6,7 @@
   ],
   "license": "GNU AGPL v3.0",
   "dependencies": [
+    "erp5_officejs",
     "erp5_officejs_onlyoffice_fonts"
   ],
   "scopes": [
