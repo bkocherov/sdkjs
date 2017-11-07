@@ -271,7 +271,7 @@
 
 			function cellForge(cell) {
 				if (cell) {
-					if (cell.oValue.type === cElementType.error) {
+					if (cell.type === cElementType.error) {
 						// debugger;
 						throw "referenced cell contain error";
 					}
